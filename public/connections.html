@@ -8,39 +8,31 @@
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <title>Fin · Connections</title>
+<link rel="stylesheet" href="/shared.css">
 <style>
-  :root { color-scheme: dark; --bg:#14161c; --card:#1d2029; --fg:#e8eaf0; --muted:#8e95a8; --line:#2c303c; --ok:#5fd39a; --warn:#f0b35a; --bad:#ff7b84; --accent:#8b8fff; --on-accent:#14161c; }
-  * { box-sizing:border-box } body { margin:0; padding:24px 16px; font:14px system-ui,sans-serif; background:var(--bg); color:var(--fg) }
-  .wrap { max-width:960px; margin:0 auto } h1 { font-size:18px; margin:0 0 4px } a { color:var(--accent) }
-  .muted { color:var(--muted) } .top { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px }
+  body { padding:24px 16px }
+  .wrap { max-width:960px; margin:0 auto } h1 { font-size:18px; margin:0 0 4px }
+  .top { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px } .top .actions { display:flex; gap:8px }
   .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px 16px; margin-bottom:14px }
   .head { display:flex; align-items:center; gap:10px; flex-wrap:wrap } .head h2 { font-size:15px; margin:0; flex:1 }
   .pill { font-size:12px; padding:2px 9px; border-radius:99px; border:1px solid currentColor } .ok { color:var(--ok) } .warn { color:var(--warn) } .bad { color:var(--bad) }
   dl { display:grid; grid-template-columns:max-content 1fr; gap:3px 16px; margin:10px 0 0; font-size:13px } dt { color:var(--muted) } dd { margin:0 }
-  table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13px } th,td { text-align:left; padding:6px 8px; border-top:1px solid var(--line) } th { color:var(--muted); font-weight:500 } td.num,th.num { text-align:right; font-variant-numeric:tabular-nums }
-  dialog { border:1px solid var(--line); border-radius:12px; padding:0; background:var(--card); color:var(--fg); width:min(400px, calc(100vw - 32px)) }
-  dialog::backdrop { background:rgba(10,12,18,.5) } dialog form { padding:20px; display:flex; flex-direction:column; gap:14px } dialog h3 { margin:0; font-size:16px }
-  dialog label { display:flex; flex-direction:column; gap:5px; font-size:12px; color:var(--muted) }
-  dialog input { font:inherit; font-size:14px; padding:8px 10px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg) }
-  dialog .actions { display:flex; justify-content:flex-end; gap:8px } button { font:inherit; background:var(--accent); color:var(--on-accent); border:0; border-radius:6px; padding:7px 12px; cursor:pointer }
-  button.ghost { background:none; color:var(--accent); border:1px solid var(--line) } button.sm { padding:3px 8px; font-size:12px }
-  .btn { display:inline-block; font:inherit; background:var(--accent); color:var(--on-accent); border-radius:6px; padding:7px 12px; text-decoration:none; line-height:normal }
-  a.btn.ghost { background:none; color:var(--accent); border:1px solid var(--line) } button:disabled { opacity:.6; cursor:default }
-  button.danger { background:var(--bad); color:var(--on-accent); border:0 } button.ghost.danger { background:none; color:var(--bad); border:1px solid var(--line) }
+  table { width:100%; border-collapse:collapse; margin-top:12px; font-size:13px } th,td { text-align:left; padding:6px 8px; border-top:1px solid var(--line) } th { color:var(--muted); font-weight:500 } td.num,th.num { text-align:right }
   .switch { position:relative; display:inline-block; width:34px; height:20px } .switch input { opacity:0; width:100%; height:100%; margin:0; position:absolute; cursor:pointer; z-index:1 }
   .switch span { position:absolute; inset:0; background:var(--line); border-radius:99px; transition:background .12s } .switch span::after { content:""; position:absolute; top:2px; left:2px; width:16px; height:16px; background:#fff; border-radius:50%; transition:transform .12s }
   .switch input:checked + span { background:var(--accent) } .switch input:checked + span::after { transform:translateX(14px) } .switch input:focus-visible + span { outline:2px solid var(--accent); outline-offset:2px }
   tr.off td:not(.keep) { opacity:.45 } th.c,td.c { width:56px }
   .inst { margin-bottom:26px } .insthead { display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 8px; padding-bottom:6px; border-bottom:1px solid var(--line) }
   .insthead h2 { font-size:16px; margin:0 } .insthead .muted { flex:1; font-size:13px } .instbody { padding-left:14px; border-left:2px solid var(--line) }
-  .brand { display:block; font-weight:700; font-size:13px; color:var(--muted); text-decoration:none; margin-bottom:6px } .brand:hover { color:var(--accent) }
+  .brand { display:block; font-weight:700; font-size:13px; color:var(--muted); margin-bottom:6px }
+  .card .err { margin-top:6px }
   .ownersel { font:inherit; font-size:13px; max-width:240px; min-width:170px; padding:4px 22px 4px 6px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--fg) } .ownersel:focus-visible { outline:2px solid var(--accent) }
-  .err { color:var(--bad); font-size:12px; margin-top:6px; word-break:break-word }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <div class="top"><div><a href="/" class="brand">Fin</a><h1>Connections</h1><div class="muted" id="sub">Loading…</div></div><a href="/accounts.html" class="btn ghost">Accounts</a></div>
+  <div class="top"><div><a href="/" class="brand">Fin</a><h1>Connections</h1><div class="muted" id="sub">Loading…</div></div>
+    <div class="actions"><button class="ghost" id="refresh" title="Ask Plaid for fresh connection status">Refresh from Plaid</button><a href="/accounts" class="btn">Accounts</a></div></div>
   <div id="dups"></div>
   <div id="items"></div>
 </div>
@@ -60,10 +52,8 @@
   <div class="err" id="ulerr" hidden></div>
   <div class="actions"><button type="button" class="ghost" id="ulcancel">Cancel</button><button type="submit" class="danger" id="ulgo">Unlink</button></div>
 </form></dialog>
-<script>
-const $ = (s) => document.querySelector(s);
-const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const fmt = (n, cur) => n == null ? "—" : n.toLocaleString("en-US", { style: "currency", currency: cur || "USD" });
+<script type="module">
+import { $, esc, cmp, usd, api } from "/shared.js";
 const when = (iso) => iso ? `${new Date(iso).toLocaleString()} <span class="muted">(${ago(iso)})</span>` : "—";
 function ago(iso) {
   const m = Math.round((Date.now() - new Date(iso)) / 60000);
@@ -95,26 +85,25 @@ function renderDups(d) {
     ${groups.length ? `<table><thead><tr><th>Account</th><th>Seen under</th><th class="num">Balance</th><th>Match</th></tr></thead><tbody>
       ${[...groups].sort((x, y) => cmp(x.institution, y.institution) || cmp(x.mask, y.mask)).map((g) => `<tr><td>${esc(g.institution)}<br><span class="muted">${esc(g.subtype || g.type)} ··${esc(g.mask)}</span></td>
         <td>${[...g.members].sort((x, y) => cmp(x.owner, y.owner)).map((m) => `${esc(m.owner)} <span class="muted">· ${esc(m.name)} · connection ${esc(short(m.item_id))}</span>`).join("<br>")}</td>
-        <td class="num">${g.members.map((m) => fmt(m.balance)).join("<br>")}</td>
+        <td class="num">${g.members.map((m) => usd(m.balance)).join("<br>")}</td>
         <td><span class="pill ${g.confidence === "high" ? "bad" : "warn"}">${g.confidence === "high" ? "Same balance" : "Balances differ"}</span></td></tr>`).join("")}
     </tbody></table>` : ""}</div>`;
 }
 
-const cmp = (a, b) => String(a ?? "").localeCompare(String(b ?? ""), undefined, { numeric: true, sensitivity: "base" }); // case-insensitive, "Card 2" < "Card 10"
 let items = [];
 
-async function load() {
+// Plaid's connection status is cached server-side for a few minutes; `force` asks for a fresh copy.
+async function load(force = false) {
   loadDups();
-  const r = await fetch("/api/status");
-  const data = await r.json();
-  if (!r.ok) { $("#sub").textContent = data.error; return; }
-  items = data;
+  try { items = await api("/api/status" + (force ? "?refresh=1" : "")); } catch (e) { $("#sub").textContent = e.message; return; }
   render();
 }
-const loadDups = () => fetch("/api/duplicates").then((r) => r.json()).then(renderDups).catch(() => {});
+const loadDups = () => api("/api/duplicates").then(renderDups).catch(() => {});
+$("#refresh").onclick = async () => { const b = $("#refresh"); b.disabled = true; await load(true); b.disabled = false; };
 
 function render() {
-  $("#sub").textContent = `${items.length} linked connection${items.length === 1 ? "" : "s"} · checked ${new Date().toLocaleTimeString()}`;
+  const fetched = items.map((i) => i.plaid?.fetched_at).filter(Boolean).sort()[0];
+  $("#sub").textContent = `${items.length} linked connection${items.length === 1 ? "" : "s"}${fetched ? " · Plaid status as of " + new Date(fetched).toLocaleTimeString() : ""}`;
   const owners = [...new Set(items.flatMap((i) => i.accounts.map((a) => a.owner)).filter((o) => o !== "Unassigned"))].sort(cmp);
   const card = (i) => {
     const [c, label] = health(i), p = i.plaid;
@@ -140,7 +129,7 @@ function render() {
         <td class="c keep"><label class="switch" title="${a.hidden ? "Hidden" : "Shown"} in the accounts view"><input type="checkbox" role="switch" data-acct="${esc(a.account_id)}" ${a.hidden ? "" : "checked"} aria-label="Show ${esc(a.name)}"><span></span></label></td>
         <td>${esc(a.name)}${a.mask ? " ··" + esc(a.mask) : ""}${a.hidden ? ' <span class="muted keep">(hidden)</span>' : ""}</td>
         <td class="keep">${ownerSelect(a, owners)}</td><td>${esc(a.group)}</td>
-        <td class="num">${fmt(a.balance == null ? null : (a.type === "credit" || a.type === "loan" ? -a.balance : a.balance), a.currency)}</td><td>${when(a.balance_as_of)}</td></tr>`).join("")}
+        <td class="num">${usd(a.balance, a.currency)}</td><td>${when(a.updated_at)}</td></tr>`).join("")}
       </tbody></table></div>`;
   };
 
@@ -176,8 +165,7 @@ function ownerSelect(a, owners) {
 }
 
 async function saveOwner(accountId, owner) {
-  const r = await fetch("/api/accounts/" + encodeURIComponent(accountId), { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ owner }) });
-  if (!r.ok) throw new Error((await r.json()).error);
+  await api("/api/accounts/" + encodeURIComponent(accountId), { method: "PATCH", json: { owner } });
   await load(); // connection labels and the duplicate check depend on owners
 }
 
@@ -202,8 +190,7 @@ async function setHidden(box) {
   const hidden = !box.checked;
   box.disabled = true;
   try {
-    const r = await fetch("/api/accounts/" + encodeURIComponent(box.dataset.acct), { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ hidden }) });
-    if (!r.ok) throw new Error((await r.json()).error);
+    await api("/api/accounts/" + encodeURIComponent(box.dataset.acct), { method: "PATCH", json: { hidden } });
     for (const i of items) for (const a of i.accounts) if (a.account_id === box.dataset.acct) a.hidden = hidden;
     render(); loadDups();
   } catch (e) { box.checked = !box.checked; box.disabled = false; alert("Could not update: " + e.message); }
@@ -217,8 +204,8 @@ function rename(i) {
   $("#rncancel").onclick = () => dlg.close();
   $("#renameform").onsubmit = async (ev) => {
     ev.preventDefault();
-    await fetch("/api/items/" + encodeURIComponent(i.item_id), { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ nickname: input.value }) });
-    dlg.close(); load();
+    try { await api("/api/items/" + encodeURIComponent(i.item_id), { method: "PATCH", json: { nickname: input.value } }); dlg.close(); load(); }
+    catch (e) { alert("Could not rename: " + e.message); }
   };
 }
 
@@ -234,8 +221,7 @@ function unlink(i) {
   $("#unlinkform").onsubmit = async (ev) => {
     ev.preventDefault(); go.disabled = true; go.textContent = "Unlinking…";
     try {
-      const r = await fetch("/api/items/" + encodeURIComponent(i.item_id), { method: "DELETE" });
-      if (!r.ok) throw new Error((await r.json()).error);
+      await api("/api/items/" + encodeURIComponent(i.item_id), { method: "DELETE" });
       dlg.close(); load();
     } catch (e) { err.textContent = e.message; err.hidden = false; go.disabled = false; go.textContent = "Unlink"; }
   };

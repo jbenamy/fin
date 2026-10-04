@@ -23,7 +23,9 @@
   .tile .label { color:var(--muted); font-size:13px } .tile .value { font-size:24px; font-weight:600; margin-top:2px }
   .tile .sub { color:var(--muted); font-size:12px; margin-top:2px }
 
-  .filters { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 22px }
+  .toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px 20px; flex-wrap:wrap; margin:0 0 22px }
+  .filters { display:flex; gap:6px; flex-wrap:wrap }
+  .toggle { display:inline-flex; align-items:center; gap:8px; color:var(--muted); cursor:pointer; margin-left:auto }
   .chip { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:99px; padding:5px 14px; cursor:pointer }
   .chip[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:var(--on-accent) }
 
@@ -52,6 +54,9 @@
 <script type="module">
 import { $, esc, cmp, plural, usd, sum, ownerList, api } from "/shared.js";
 let accounts = [], owner = null; // owner === null means everyone
+// Zero-balance accounts are hidden by default; the choice is remembered (best-effort: storage may be unavailable).
+let hideZero = true;
+try { hideZero = localStorage.getItem("hideZero") !== "0"; } catch {}
 
 function tile(label, value, sub) {
   return `<div class="tile"><div class="label">${label}</div><div class="value">${usd(value)}</div><div class="sub">${sub}</div></div>`;
@@ -74,7 +79,9 @@ function render() {
     return;
   }
   const owners = ownerList(accounts);
-  const shown = owner ? accounts.filter((a) => a.owner === owner) : accounts;
+  const everything = owner ? accounts.filter((a) => a.owner === owner) : accounts;
+  const zeros = everything.filter((a) => a.balance === 0).length;
+  const shown = hideZero ? everything.filter((a) => a.balance !== 0) : everything;   // net worth is unaffected: zeros add nothing
   const cash = shown.filter((a) => a.kind === "cash"), inv = shown.filter((a) => a.kind === "investment"), debt = shown.filter((a) => a.kind === "debt");
   const updated = accounts.map((a) => a.updated_at).filter(Boolean).sort().pop();
   // Institutions that appear under more than one login need the connection label to tell their cards apart.
@@ -82,10 +89,13 @@ function render() {
 
   const filters = owners.length > 1 ? `<div class="filters" role="group" aria-label="Filter by owner">
     ${[null, ...owners].map((o) => `<button class="chip" aria-pressed="${owner === o}" data-owner="${esc(o ?? "")}">${o === null ? "Everyone" : esc(o)}</button>`).join("")}</div>` : "";
+  const toggle = `<label class="toggle"><span>Hide $0 accounts${hideZero && zeros ? ` (${zeros} hidden)` : ""}</span>
+    <span class="switch"><input type="checkbox" role="switch" id="hidezero" ${hideZero ? "checked" : ""}><span></span></span></label>`;
 
   // Owner -> account type (same order as the sidebar) -> cards.
   const sections = (owner ? [owner] : owners).map((o) => {
     const mine = shown.filter((a) => a.owner === o);
+    if (!mine.length) return "";
     const types = [...new Set(mine.map((a) => a.group))]
       .sort((x, y) => mine.find((a) => a.group === x).group_rank - mine.find((a) => a.group === y).group_rank || cmp(x, y));
     return `<section><div class="owner"><h2>${esc(o)}</h2><span class="muted">${plural(mine.length, "account")}</span><span class="total">${usd(sum(mine))}</span></div>
@@ -103,8 +113,9 @@ function render() {
       ${tile("Cash", sum(cash), plural(cash.length, "account"))}
       ${tile("Investments", sum(inv), plural(inv.length, "account"))}
       ${tile("Owed", sum(debt), plural(debt.length, "account"))}
-    </div>${filters}${sections}`;
+    </div><div class="toolbar">${filters}${toggle}</div>${sections || `<p class="muted">Every account here has a $0 balance. Turn off “Hide $0 accounts” to see them.</p>`}`;
   document.querySelectorAll("[data-owner]").forEach((b) => b.onclick = () => { owner = b.dataset.owner || null; render(); });
+  $("#hidezero").onchange = (e) => { hideZero = e.target.checked; try { localStorage.setItem("hideZero", hideZero ? "1" : "0"); } catch {} render(); };
 }
 
 api("/api/accounts").then((a) => { accounts = a; render(); })

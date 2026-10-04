@@ -23,7 +23,9 @@
   .row { display:flex; gap:8px; align-items:center; margin-bottom:16px; flex-wrap:wrap }
   .owner { font-weight:600; font-size:13px; margin:14px 0 2px; padding:4px 8px; border-radius:6px; display:flex; align-items:center; gap:2px }
   .owner .oname { flex:1; min-width:0 } .owner:hover,.owner.sel { background:var(--bg) } .otoggle { padding:2px 4px 2px 0; margin-left:-4px }
-  .owner,.grp { cursor:pointer; user-select:none } .chev { display:inline-block; width:14px; color:var(--muted); transition:transform .12s } .chev.c { transform:rotate(-90deg) }
+  .owner,.grp { cursor:pointer; user-select:none } .chev { display:inline-flex; align-items:center; justify-content:center; width:16px; margin-right:2px; vertical-align:-3px; color:var(--muted) } .owner:hover .chev, .grp:hover .chev { color:var(--fg) }
+  .ic { width:14px; height:14px; flex:none; fill:none; stroke:currentColor; stroke-width:2.25; stroke-linecap:round; stroke-linejoin:round }
+  button .ic { vertical-align:-2px; margin-right:5px }
   .count { font-weight:400; font-size:12px; color:var(--muted); margin-left:6px; font-variant-numeric:tabular-nums; text-transform:none; letter-spacing:0 }
   .grp { display:flex; justify-content:space-between; font-size:11px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); margin:8px 8px 2px }
   .banner { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:16px }
@@ -44,7 +46,7 @@
 <aside>
   <h1><a href="/" class="brand">Fin</a></h1>
   <div class="row"><button id="link">+ Connect bank</button><button class="ghost" id="sync">Sync now</button></div>
-  <div class="row" style="margin:0 0 4px"><button class="ghost sm" id="expandall">Expand all</button><button class="ghost sm" id="collapseall">Collapse all</button></div>
+  <div class="row" style="margin:0 0 4px"><button class="ghost sm" id="expandall"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>Expand all</button><button class="ghost sm" id="collapseall"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="m7 20 5-5 5 5"/><path d="m7 4 5 5 5-5"/></svg>Collapse all</button></div>
   <div id="accounts"></div>
   <div class="side-foot"><a href="/connections" class="btn">Connections</a></div>
 </aside>
@@ -93,7 +95,12 @@ let collapsed = new Set();
 try { collapsed = new Set(JSON.parse(localStorage.getItem("collapsed") ?? "[]")); } catch {}
 const saveCollapsed = () => { try { localStorage.setItem("collapsed", JSON.stringify([...collapsed])); } catch {} };
 const toggle = (key) => { collapsed.has(key) ? collapsed.delete(key) : collapsed.add(key); saveCollapsed(); renderSidebar(); };
-const chev = (key) => `<span class="chev ${collapsed.has(key) ? "c" : ""}">▾</span>`;
+const icon = (paths) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
+const ICON = {
+  down: icon('<path d="m6 9 6 6 6-6"/>'),          // expanded
+  right: icon('<path d="m9 6 6 6-6 6"/>'),         // collapsed
+};
+const chev = (key) => `<span class="chev">${collapsed.has(key) ? ICON.right : ICON.down}</span>`;
 
 function renderSidebar() {
   // Owner -> account group -> accounts. "Unassigned" sorts last. Totals stay visible when collapsed.

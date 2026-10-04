@@ -11,7 +11,9 @@
 <link rel="stylesheet" href="/shared.css">
 <style>
   body { display:flex; min-height:100vh }
-  aside { width:280px; background:var(--card); border-right:1px solid var(--line); padding:16px; flex-shrink:0 }
+  aside { width:280px; background:var(--card); border-right:1px solid var(--line); padding:16px; flex-shrink:0; position:sticky; top:0; align-self:flex-start; height:100vh; display:flex; flex-direction:column }
+  #accounts { flex:1; min-height:0; overflow-y:auto; margin:0 -8px; padding:0 8px }
+  .side-foot { padding-top:12px; margin-top:12px; border-top:1px solid var(--line) } .side-foot .btn { display:block; text-align:center }
   main { flex:1; padding:24px; min-width:0 }
   h1 { font-size:18px; margin:0 0 12px }
   .acct { display:flex; justify-content:space-between; gap:8px; padding:7px 8px; border-radius:6px; cursor:pointer } .acct:hover,.acct.sel { background:var(--bg) }
@@ -35,15 +37,16 @@
   .chip { display:inline-flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--line); border-radius:99px; padding:3px 6px 3px 12px; font-size:13px }
   .chip button { background:none; color:var(--muted); border:0; padding:0 6px; font-size:16px; line-height:1; cursor:pointer }
   .pending { opacity:.55 }
-  @media (max-width:700px) { body { flex-direction:column } aside { width:auto; border-right:0; border-bottom:1px solid var(--line) } }
+  @media (max-width:700px) { body { flex-direction:column } aside { width:auto; position:static; height:auto; align-self:stretch; border-right:0; border-bottom:1px solid var(--line) } #accounts { max-height:50vh } }
 </style>
 </head>
 <body>
 <aside>
   <h1><a href="/" class="brand">Fin</a></h1>
-  <div class="row"><button id="link">+ Connect bank</button><button class="ghost" id="sync">Sync now</button><a href="/connections" class="btn">Connections</a></div>
+  <div class="row"><button id="link">+ Connect bank</button><button class="ghost" id="sync">Sync now</button></div>
   <div class="row" style="margin:0 0 4px"><button class="ghost sm" id="expandall">Expand all</button><button class="ghost sm" id="collapseall">Collapse all</button></div>
   <div id="accounts"></div>
+  <div class="side-foot"><a href="/connections" class="btn">Connections</a></div>
 </aside>
 <main id="main"><div id="syncpanel"></div><div id="content"></div></main>
 <dialog id="editdlg">
@@ -74,8 +77,12 @@ async function load() {
   if (selected) select(selected); else $("#content").innerHTML = '<p class="muted">No accounts yet. Connect a bank to get started.</p>';
 }
 
+// Hover text for sidebar rows: the full name and details that the narrow column wraps or omits.
+const acctTip = (a) => [a.name, `${a.institution}${a.multiple_connections && a.connection ? " (" + a.connection + ")" : ""}${a.mask ? " ··" + a.mask : ""}`,
+  `${a.group} · ${a.owner}`, usd(a.balance) + (a.kind === "cash" && a.available != null && a.available !== a.balance ? ` (${usd(a.available)} available)` : "")].join("\n");
+
 function acctRow(a) {
-  return `<div class="acct ${selected === a.account_id ? "sel" : ""}" data-id="${esc(a.account_id)}">
+  return `<div class="acct ${selected === a.account_id ? "sel" : ""}" data-id="${esc(a.account_id)}" title="${esc(acctTip(a))}">
       <span>${esc(a.name)}<small>${esc(a.institution)}${a.multiple_connections && a.connection ? " (" + esc(a.connection) + ")" : ""}${a.mask ? " ··" + esc(a.mask) : ""}</small></span>
       <span class="num ${cls(a.balance)}">${usd(a.balance)}</span>
     </div>`;
@@ -95,13 +102,13 @@ function renderSidebar() {
     const mine = accounts.filter((a) => a.owner === owner), ok = "o:" + owner;
     const rank = (g) => mine.find((a) => a.group === g).group_rank;
     const owned = [...new Set(mine.map((a) => a.group))].sort((a, b) => rank(a) - rank(b) || cmp(a, b));
-    html += `<div class="owner ${selected === ok ? "sel" : ""}" role="button" tabindex="0" data-owner="${esc(ok)}" title="Show all transactions for ${esc(owner)}">
+    html += `<div class="owner ${selected === ok ? "sel" : ""}" role="button" tabindex="0" data-owner="${esc(ok)}" title="${esc(owner)}\n${plural(mine.length, "account")} · ${usd(sum(mine))}\nClick to show all their transactions">
       <span class="otoggle" role="button" tabindex="0" aria-label="${collapsed.has(ok) ? "Expand" : "Collapse"} ${esc(owner)}" aria-expanded="${!collapsed.has(ok)}" data-toggle="${esc(ok)}">${chev(ok)}</span>
       <span class="oname">${esc(owner)}${collapsed.has(ok) ? `<span class="count">${mine.length}</span>` : ""}</span><span class="num ${cls(sum(mine))}">${usd(sum(mine))}</span></div>`;
     if (collapsed.has(ok)) continue;
     for (const g of owned) {
       const list = mine.filter((a) => a.group === g).sort((x, y) => cmp(x.name, y.name) || cmp(x.mask, y.mask)), gk = `g:${owner}|${g}`;
-      html += `<div class="grp" role="button" tabindex="0" aria-expanded="${!collapsed.has(gk)}" data-toggle="${esc(gk)}">
+      html += `<div class="grp" role="button" tabindex="0" aria-expanded="${!collapsed.has(gk)}" data-toggle="${esc(gk)}" title="${esc(`${g}\n${plural(list.length, "account")} · ${usd(sum(list))}\nClick to ${collapsed.has(gk) ? "expand" : "collapse"}`)}">
         <span>${chev(gk)}${esc(g)}${list.every((a) => a.kind === "investment") ? " (balance only)" : ""}${collapsed.has(gk) ? `<span class="count">${list.length}</span>` : ""}</span><span class="num">${usd(sum(list))}</span></div>`;
       if (!collapsed.has(gk)) html += list.map(acctRow).join("");
     }

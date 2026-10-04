@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="theme-color" content="#14161c">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Fin</title>
+<style>
+  :root { color-scheme: dark; --bg:#14161c; --card:#1d2029; --fg:#e8eaf0; --muted:#8e95a8; --line:#2c303c; --accent:#8b8fff; --accent-soft:#272a4a; --on-accent:#14161c; }
+  * { box-sizing:border-box }
+  body { margin:0; padding:24px 16px 48px; font:14px system-ui,sans-serif; background:var(--bg); color:var(--fg) }
+  .wrap { max-width:1100px; margin:0 auto }
+  .nav { display:flex; align-items:center; gap:10px; margin-bottom:28px }
+  .brand { font-weight:700; font-size:20px; color:inherit; text-decoration:none; margin-right:auto } .brand:hover { color:var(--accent) }
+  .btn { font:inherit; border:1px solid var(--line); color:var(--accent); background:none; border-radius:6px; padding:7px 12px; text-decoration:none; cursor:pointer }
+  .btn:hover { background:var(--card) }
+  .muted { color:var(--muted) }
+
+  /* Headline: one hero figure + a row of stat tiles */
+  .hero { margin-bottom:6px } .hero .label { color:var(--muted); font-size:14px }
+  .hero .value { font-size:56px; font-weight:600; line-height:1.1; letter-spacing:-.02em; margin:2px 0 4px }
+  .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(170px, 1fr)); gap:12px; margin:18px 0 26px }
+  .tile { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px }
+  .tile .label { color:var(--muted); font-size:13px } .tile .value { font-size:24px; font-weight:600; margin-top:2px }
+  .tile .sub { color:var(--muted); font-size:12px; margin-top:2px }
+
+  .filters { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 22px }
+  .chip { font:inherit; border:1px solid var(--line); background:var(--card); color:var(--fg); border-radius:99px; padding:5px 14px; cursor:pointer }
+  .chip[aria-pressed="true"] { background:var(--accent); border-color:var(--accent); color:var(--on-accent) }
+
+  .owner { display:flex; align-items:baseline; gap:12px; margin:30px 0 10px; padding-bottom:6px; border-bottom:1px solid var(--line) }
+  .owner h2 { font-size:16px; margin:0; flex:1 } .owner .total { font-size:16px; font-weight:600 }
+  .cards { display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:12px }
+  a.card { display:flex; flex-direction:column; gap:2px; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:14px 16px; color:inherit; text-decoration:none; min-height:128px }
+  a.card:hover { border-color:var(--accent) } a.card:focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+  .card .name { font-weight:600; overflow-wrap:anywhere } .card .where { color:var(--muted); font-size:12px; overflow-wrap:anywhere }
+  .card .value { font-size:26px; font-weight:600; margin-top:auto; padding-top:12px }
+  .card .foot { display:flex; justify-content:space-between; gap:8px; color:var(--muted); font-size:12px; margin-top:2px }
+  .kind { background:var(--accent-soft); color:var(--accent); border-radius:99px; padding:1px 8px; font-size:11px; white-space:nowrap }
+  .empty { text-align:center; padding:60px 0; color:var(--muted) }
+  .err { color:#ff7b84 }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <nav class="nav">
+    <a href="/" class="brand">Fin</a>
+    <a href="/accounts.html" class="btn">Accounts</a>
+    <a href="/connections.html" class="btn">Connections</a>
+  </nav>
+  <div id="app"><p class="muted">Loading…</p></div>
+</div>
+<script>
+// Plaid sends OAuth banks back to "/". Hand the full return URL to the accounts page, which resumes Link.
+if (location.search.includes("oauth_state_id")) {
+  try { localStorage.setItem("link_redirect", location.href); } catch {}
+  location.replace("/accounts.html");
+}
+
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const cmp = (a, b) => String(a ?? "").localeCompare(String(b ?? ""), undefined, { numeric: true, sensitivity: "base" });
+const usd = (n) => n.toLocaleString("en-US", { style: "currency", currency: "USD" });
+const plural = (n, w) => `${n} ${w}${n === 1 ? "" : "s"}`;
+const GROUP_ORDER = ["Checking", "Savings", "HSA", "Credit Cards", "Loans", "Brokerage", "401(k)", "Retirement", "Education", "Other"];
+const rank = (g) => { const i = GROUP_ORDER.indexOf(g); return i < 0 ? 99 : i; };
+
+// Credit cards and loans are amounts owed: show them as negative so totals add up.
+const owed = (a) => a.type === "credit" || a.type === "loan";
+const bal = (a) => a.current_balance == null ? 0 : (owed(a) ? -a.current_balance : a.current_balance);
+const sum = (list) => list.reduce((s, a) => s + bal(a), 0);
+
+let accounts = [], owner = null; // owner === null means everyone
+
+function tile(label, value, sub) {
+  return `<div class="tile"><div class="label">${label}</div><div class="value">${usd(value)}</div><div class="sub">${sub}</div></div>`;
+}
+
+function card(a, multi) {
+  const where = [a.institution, multi.has(a.institution) && a.connection ? a.connection : null].filter(Boolean).join(" · ") + (a.mask ? ` ··${a.mask}` : "");
+  const sub = a.type === "investment" ? "balance only" : owed(a) ? "owed" :
+    a.available_balance != null && a.available_balance !== a.current_balance ? `${usd(a.available_balance)} available` : "";
+  const href = "/accounts.html#" + encodeURIComponent(a.account_id);
+  return `<a class="card" href="${href}" aria-label="${esc(a.name)}, ${usd(bal(a))}">
+    <div class="name">${esc(a.name)}</div><div class="where">${esc(where)}</div>
+    <div class="value">${usd(bal(a))}</div>
+    <div class="foot"><span class="kind">${esc(a.group)}</span><span>${esc(sub)}</span></div></a>`;
+}
+
+function render() {
+  if (!accounts.length) {
+    $("#app").innerHTML = `<div class="empty">No accounts yet. <a href="/accounts.html">Connect a bank</a> to get started.</div>`;
+    return;
+  }
+  const owners = [...new Set(accounts.map((a) => a.owner))].sort((a, b) => (a === "Unassigned") - (b === "Unassigned") || cmp(a, b));
+  const shown = owner ? accounts.filter((a) => a.owner === owner) : accounts;
+  const cash = shown.filter((a) => a.type === "depository"), inv = shown.filter((a) => a.type === "investment"), debt = shown.filter(owed);
+  const updated = accounts.map((a) => a.updated_at).filter(Boolean).sort().pop();
+  // Institutions that appear under more than one login need the connection label to tell their cards apart.
+  const multi = new Set(accounts.filter((a) => a.multiple_connections).map((a) => a.institution));
+
+  const filters = owners.length > 1 ? `<div class="filters" role="group" aria-label="Filter by owner">
+    ${[null, ...owners].map((o) => `<button class="chip" aria-pressed="${owner === o}" data-owner="${esc(o ?? "")}">${o === null ? "Everyone" : esc(o)}</button>`).join("")}</div>` : "";
+
+  const sections = (owner ? [owner] : owners).map((o) => {
+    const mine = shown.filter((a) => a.owner === o)
+      .sort((x, y) => rank(x.group) - rank(y.group) || cmp(x.name, y.name) || cmp(x.mask, y.mask));
+    return `<section><div class="owner"><h2>${esc(o)}</h2><span class="muted">${plural(mine.length, "account")}</span><span class="total">${usd(sum(mine))}</span></div>
+      <div class="cards">${mine.map((a) => card(a, multi)).join("")}</div></section>`;
+  }).join("");
+
+  $("#app").innerHTML = `
+    <div class="hero"><div class="label">Net worth${owner ? ` · ${esc(owner)}` : ""}</div><div class="value">${usd(sum(shown))}</div>
+      <div class="muted">${updated ? "Balances as of " + new Date(updated).toLocaleString() : ""}</div></div>
+    <div class="tiles">
+      ${tile("Cash", sum(cash), plural(cash.length, "account"))}
+      ${tile("Investments", sum(inv), plural(inv.length, "account"))}
+      ${tile("Owed", sum(debt), plural(debt.length, "account"))}
+    </div>${filters}${sections}`;
+  document.querySelectorAll("[data-owner]").forEach((b) => b.onclick = () => { owner = b.dataset.owner || null; render(); });
+}
+
+fetch("/api/accounts").then((r) => r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status)))
+  .then((a) => { accounts = a; render(); })
+  .catch((e) => { $("#app").innerHTML = `<p class="err">Couldn't load accounts: ${esc(e.message)}</p>`; });
+</script>
+</body>
+</html>

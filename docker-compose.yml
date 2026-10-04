@@ -1,0 +1,23 @@
+name: fin
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: ${TZ:-America/New_York}   # the daily sync cron uses this timezone
+    volumes:
+      - fin-data:/data              # SQLite DB incl. Plaid access tokens: back this up
+    networks:
+      - apps
+    labels:
+      caddy: ${HOSTNAMES:-fin.example.com}
+      caddy.reverse_proxy: "{{upstreams 3000}}"
+
+volumes:
+  fin-data:
+
+networks:
+  apps:
+    external: true

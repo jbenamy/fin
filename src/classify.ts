@@ -25,6 +25,17 @@ export function accountGroup(type: string, subtype: string | null): string {
 
 export const GROUP_ORDER = ["Checking", "Savings", "HSA", "Credit Cards", "Loans", "Brokerage", "401(k)", "Retirement", "Education", "Other"];
 
+export const groupRank = (g: string) => { const i = GROUP_ORDER.indexOf(g); return i < 0 ? GROUP_ORDER.length : i; };
+
+/** Credit cards and loans are amounts owed: expose them as negative so every total adds up. */
+export const signedBalance = (type: string, current: number | null) =>
+  current == null ? null : type === "credit" || type === "loan" ? -current : current;
+
+/** Coarse bucket used for the dashboard tiles. */
+export type AccountKind = "cash" | "investment" | "debt" | "other";
+export const accountKind = (type: string): AccountKind =>
+  type === "depository" ? "cash" : type === "investment" ? "investment" : type === "credit" || type === "loan" ? "debt" : "other";
+
 const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
 const ORG = /\b(llc|inc|corp|trust|ltd|lp|estate|foundation|company|co)\b/i;
 const titleCase = (s: string) => s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());

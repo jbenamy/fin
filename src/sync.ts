@@ -1,9 +1,11 @@
 import type { RemovedTransaction, Transaction } from "plaid";
 import { ownerFromNames } from "./classify.js";
 import { db } from "./db.js";
+import { invalidatePlaidStatus } from "./plaidStatus.js";
 import { plaid } from "./plaid.js";
+import type { ItemRow } from "./types.js";
 
-export interface ItemRow { item_id: string; access_token: string; cursor: string | null; identity_status: string | null }
+export type SyncItem = Pick<ItemRow, "item_id" | "access_token" | "cursor" | "identity_status">;
 
 export type SyncEvent =
   | { event: "start"; institutions: string[] }
@@ -33,7 +35,7 @@ const upsertTx = db.prepare(`
     merchant=excluded.merchant, category=excluded.category, amount=excluded.amount, pending=excluded.pending`);
 const deleteTx = db.prepare("DELETE FROM transactions WHERE transaction_id = ?");
 
-async function syncBalances(item: ItemRow): Promise<{ registerAccounts: Set<string>; total: number }> {
+async function syncBalances(item: SyncItem): Promise<{ registerAccounts: Set<string>; total: number }> {
   const { data } = await plaid.accountsGet({ access_token: item.access_token });
   const now = new Date().toISOString();
   const registerAccounts = new Set<string>();
@@ -49,7 +51,7 @@ async function syncBalances(item: ItemRow): Promise<{ registerAccounts: Set<stri
 }
 
 /** Detect account owners via Plaid Identity. Failure here never fails the sync. Stores names only. */
-async function syncOwners(item: ItemRow): Promise<number> {
+async function syncOwners(item: SyncItem): Promise<number> {
   if (item.identity_status) return 0;
   const setStatus = db.prepare("UPDATE items SET identity_status = ? WHERE item_id = ?");
   try {
@@ -71,7 +73,7 @@ async function syncOwners(item: ItemRow): Promise<number> {
   }
 }
 
-async function syncTransactions(item: ItemRow, registerAccounts: Set<string>, onFetched: (n: number) => void) {
+async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, onFetched: (n: number) => void) {
   const saved = item.cursor ?? undefined;
   for (;;) {
     const added: Transaction[] = [], modified: Transaction[] = [];
@@ -107,7 +109,7 @@ async function syncTransactions(item: ItemRow, registerAccounts: Set<string>, on
   }
 }
 
-export async function syncItem(item: ItemRow, onProgress: Progress = () => {}): Promise<SyncResult> {
+export async function syncItem(item: SyncItem, onProgress: Progress = () => {}): Promise<SyncResult> {
   const institution = (db.prepare("SELECT institution FROM items WHERE item_id = ?").get(item.item_id) as { institution: string } | undefined)?.institution ?? "Unknown";
   const result: SyncResult = { institution, ok: true, accounts: 0, registerAccounts: 0, brokerageAccounts: 0, added: 0, modified: 0, removed: 0, ownersDetected: 0 };
   const phase = (p: "balances" | "owners" | "transactions", detail: string) => onProgress({ event: "phase", institution, phase: p, detail });
@@ -130,6 +132,7 @@ export async function syncItem(item: ItemRow, onProgress: Progress = () => {}): 
     console.error(`sync failed for ${item.item_id}: ${msg}`);
     result.ok = false; result.error = msg;
   }
+  invalidatePlaidStatus(item.item_id);
   onProgress({ event: "item_done", result });
   return result;
 }
@@ -142,7 +145,7 @@ export async function syncAll(onProgress: Progress = () => {}): Promise<SyncResu
   if (running) throw new Error("A sync is already running");
   running = true;
   try {
-    const items = db.prepare("SELECT item_id, access_token, cursor, identity_status, institution FROM items").all() as unknown as (ItemRow & { institution: string })[];
+    const items = db.prepare("SELECT item_id, access_token, cursor, identity_status, institution FROM items").all() as unknown as (SyncItem & { institution: string })[];
     onProgress({ event: "start", institutions: items.map((i) => i.institution) });
     const results: SyncResult[] = [];
     for (const item of items) results.push(await syncItem(item, onProgress));

@@ -52,3 +52,7 @@ addColumn("items", "identity_status", "TEXT");
 addColumn("items", "nickname", "TEXT");
 addColumn("items", "created_at", "TEXT");
 addColumn("accounts", "hidden", "INTEGER NOT NULL DEFAULT 0");
+
+// One definition of "who owns this account": manual override, else Plaid-detected, else Unassigned.
+db.exec(`CREATE VIEW IF NOT EXISTS account_view AS
+  SELECT a.*, COALESCE(a.owner_override, a.owner_detected, 'Unassigned') AS owner FROM accounts a`);

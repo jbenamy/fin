@@ -24,6 +24,7 @@ test("signedBalance makes credit and loan balances negative", () => {
   assert.equal(signedBalance("depository", 100), 100);
   assert.equal(signedBalance("investment", 7), 7);
   assert.equal(signedBalance("credit", null), null);
+  assert.ok(Object.is(signedBalance("credit", 0), 0));   // a paid-off card is 0, never -0 ("-$0.00")
 });
 
 test("accountKind buckets for the dashboard tiles", () => {

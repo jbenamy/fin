@@ -29,7 +29,7 @@ export const groupRank = (g: string) => { const i = GROUP_ORDER.indexOf(g); retu
 
 /** Credit cards and loans are amounts owed: expose them as negative so every total adds up. */
 export const signedBalance = (type: string, current: number | null) =>
-  current == null ? null : type === "credit" || type === "loan" ? -current : current;
+  current == null ? null : type === "credit" || type === "loan" ? 0 - current || 0 : current; // `|| 0` avoids -0 ("-$0.00")
 
 /** Coarse bucket used for the dashboard tiles. */
 export type AccountKind = "cash" | "investment" | "debt" | "other";

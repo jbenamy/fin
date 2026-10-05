@@ -3,6 +3,21 @@
 A small, read-only dashboard of account balances and transactions across a family's banks, backed by [Plaid](https://plaid.com).
 A daily sync pulls balances and transactions; brokerage and retirement accounts show a current value only (no register).
 
+## Screenshots
+Sample data only.
+
+**Dashboard**
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+**Accounts**
+
+![Accounts](docs/screenshots/accounts.png)
+
+**Connections**
+
+![Connections](docs/screenshots/connections.png)
+
 ## Pages
 | URL | What it shows |
 |---|---|

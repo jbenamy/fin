@@ -30,7 +30,7 @@ test("sync stores balances and cash transactions, skips brokerage transactions, 
   assert.deepEqual([result.added, result.modified, result.removed], [1, 0, 0]);   // the brokerage transaction is not counted
   assert.deepEqual(db.prepare("SELECT transaction_id FROM transactions").all().map((r: any) => r.transaction_id), ["t1"]);
   const owners = Object.fromEntries(db.prepare("SELECT account_id, owner FROM account_view").all().map((r: any) => [r.account_id, r.owner]));
-  assert.deepEqual(owners, { cash: "Alex Smith", brk: "Alex Smith Sam Smith & Alex Smith Sam Smith" });
+  assert.deepEqual(owners, { cash: "Alex Smith", brk: "Alex Smith & Sam Smith" });
   const item = db.prepare("SELECT cursor, identity_status, last_error FROM items").get() as any;
   assert.deepEqual([item.cursor, item.identity_status, item.last_error], ["c1", "ok", null]);
 });

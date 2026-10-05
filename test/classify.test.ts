@@ -49,7 +49,7 @@ test("ownerFromNames normalizes names across institutions", () => {
 test("joint accounts become 'A & B', sorted so order is stable", () => {
   const a = ownerFromNames([{ names: ["Alex Smith"] }, { names: ["Sam Q. Smith"] }]);
   const b = ownerFromNames([{ names: ["SAM SMITH"] }, { names: ["ALEX SMITH"] }]);
-  assert.equal(a, "Alex Smith Sam Smith & Alex Smith Sam Smith");
+  assert.equal(a, "Alex Smith & Sam Smith");
   assert.equal(a, b);
 });
 

@@ -36,194 +36,19 @@
 <dialog id="renamedlg"><form method="dialog" id="renameform">
   <h3 id="rntitle">Rename connection</h3>
   <label>Nickname<input id="rnname" maxlength="60" autocomplete="off" placeholder="e.g. Alex's Schwab"></label>
-  <div class="actions"><button type="button" class="ghost" id="rncancel">Cancel</button><button type="submit">Save</button></div>
+  <div class="actions"><button type="button" class="ghost" data-cancel>Cancel</button><button type="submit">Save</button></div>
 </form></dialog>
 <dialog id="ownerdlg"><form method="dialog" id="ownerform">
   <h3>New owner</h3>
   <label>Owner name<input id="ownername" maxlength="80" autocomplete="off" placeholder="e.g. Sam Smith"></label>
-  <div class="actions"><button type="button" class="ghost" id="ownercancel">Cancel</button><button type="submit">Save</button></div>
+  <div class="actions"><button type="button" class="ghost" data-cancel>Cancel</button><button type="submit">Save</button></div>
 </form></dialog>
 <dialog id="unlinkdlg"><form method="dialog" id="unlinkform">
   <h3 id="ultitle">Unlink connection</h3>
   <p id="ulbody" style="margin:0;font-size:13px;line-height:1.5"></p>
   <div class="err" id="ulerr" hidden></div>
-  <div class="actions"><button type="button" class="ghost" id="ulcancel">Cancel</button><button type="submit" class="danger" id="ulgo">Unlink</button></div>
+  <div class="actions"><button type="button" class="ghost" data-cancel>Cancel</button><button type="submit" class="danger" id="ulgo">Unlink</button></div>
 </form></dialog>
-<script type="module">
-import { $, esc, cmp, usd, api } from "/shared.js";
-const when = (iso) => iso ? `${new Date(iso).toLocaleString()} <span class="muted">(${ago(iso)})</span>` : "—";
-function ago(iso) {
-  const m = Math.round((Date.now() - new Date(iso)) / 60000);
-  if (m < 2) return "just now"; if (m < 120) return m + " min ago";
-  const h = Math.round(m / 60); return h < 48 ? h + " h ago" : Math.round(h / 24) + " d ago";
-}
-const STALE_HOURS = 36; // a daily sync should never be older than this
-
-function health(i) {
-  if (i.last_error || i.plaid?.error || i.plaid_error) return ["bad", "Error"];
-  if (i.identity_status === "needs_consent") return ["warn", "Needs permission"];
-  if (!i.last_synced) return ["warn", "Never synced"];
-  if (Date.now() - new Date(i.last_synced) > STALE_HOURS * 3600e3) return ["warn", "Stale"];
-  return ["ok", "Healthy"];
-}
-
-const short = (id) => "…" + String(id).slice(-6);
-function renderDups(d) {
-  const groups = d.accounts, conns = d.connections;
-  if (!groups.length && !conns.length) {
-    $("#dups").innerHTML = `<div class="card"><div class="head"><h2>Duplicate accounts</h2><span class="pill ok">None found</span></div>
-      <p class="muted" style="margin:8px 0 0;font-size:13px">No account appears through more than one connection.</p></div>`;
-    return;
-  }
-  $("#dups").innerHTML = `<div class="card"><div class="head"><h2>Duplicate accounts</h2><span class="pill warn">${groups.length + conns.length} found</span></div>
-    <p class="muted" style="margin:8px 0 0;font-size:13px">The same real account is reachable through more than one linked connection, for example when two people each link the same joint account.
-    Balances and transactions for these are counted more than once in owner totals and "All transactions".</p>
-    ${conns.map((c) => `<div class="err" style="color:var(--warn)">${esc(c.institution)}: ${c.item_ids.length} connections (${c.item_ids.map(short).join(", ")}) cover the same accounts. Each one is a separate Plaid Item, so you're likely paying for both.</div>`).join("")}
-    ${groups.length ? `<table><thead><tr><th>Account</th><th>Seen under</th><th class="num">Balance</th><th>Match</th></tr></thead><tbody>
-      ${[...groups].sort((x, y) => cmp(x.institution, y.institution) || cmp(x.mask, y.mask)).map((g) => `<tr><td>${esc(g.institution)}<br><span class="muted">${esc(g.subtype || g.type)} ··${esc(g.mask)}</span></td>
-        <td>${[...g.members].sort((x, y) => cmp(x.owner, y.owner)).map((m) => `${esc(m.owner)} <span class="muted">· ${esc(m.name)} · connection ${esc(short(m.item_id))}</span>`).join("<br>")}</td>
-        <td class="num">${g.members.map((m) => usd(m.balance)).join("<br>")}</td>
-        <td><span class="pill ${g.confidence === "high" ? "bad" : "warn"}">${g.confidence === "high" ? "Same balance" : "Balances differ"}</span></td></tr>`).join("")}
-    </tbody></table>` : ""}</div>`;
-}
-
-let items = [];
-
-// Plaid's connection status is cached server-side for a few minutes; `force` asks for a fresh copy.
-async function load(force = false) {
-  loadDups();
-  try { items = await api("/api/status" + (force ? "?refresh=1" : "")); } catch (e) { $("#sub").textContent = e.message; return; }
-  render();
-}
-const loadDups = () => api("/api/duplicates").then(renderDups).catch(() => {});
-$("#refresh").onclick = async () => { const b = $("#refresh"); b.disabled = true; await load(true); b.disabled = false; };
-
-function render() {
-  const fetched = items.map((i) => i.plaid?.fetched_at).filter(Boolean).sort()[0];
-  $("#sub").textContent = `${items.length} linked connection${items.length === 1 ? "" : "s"}${fetched ? " · Plaid status as of " + new Date(fetched).toLocaleTimeString() : ""}`;
-  const owners = [...new Set(items.flatMap((i) => i.accounts.map((a) => a.owner)).filter((o) => o !== "Unassigned"))].sort(cmp);
-  const card = (i) => {
-    const [c, label] = health(i), p = i.plaid;
-    return `<div class="card">
-      <div class="head"><h2>${esc(i.label)}</h2>
-        <button class="ghost sm" data-rename="${esc(i.item_id)}">Rename</button>
-        <button class="ghost sm danger" data-unlink="${esc(i.item_id)}">Unlink</button><span class="pill ${c}">${label}</span></div>
-      <dl>
-        <dt>Connection</dt><dd>${esc(i.suffix ? "…" + i.suffix : "")}${i.owners.length ? ` · ${esc([...i.owners].sort(cmp).join(", "))}` : ""}${i.created_at ? ` · linked ${new Date(i.created_at).toLocaleDateString()}` : ""}</dd>
-        <dt>Last sync (this app)</dt><dd>${when(i.last_synced)}</dd>
-        ${p ? `<dt>Transactions updated (Plaid)</dt><dd>${when(p.transactions_last_success)}</dd>` : ""}
-        ${p?.investments_last_success ? `<dt>Investments updated (Plaid)</dt><dd>${when(p.investments_last_success)}</dd>` : ""}
-        ${p?.consent_expiration_time ? `<dt>Consent expires</dt><dd>${when(p.consent_expiration_time)}</dd>` : ""}
-        ${p ? `<dt>Products</dt><dd>${esc((p.consented_products || []).join(", ") || "—")}</dd>` : ""}
-        <dt>Owner detection</dt><dd>${esc(i.identity_status ?? "not tried yet")}</dd>
-      </dl>
-      ${i.last_error ? `<div class="err">Sync error: ${esc(i.last_error)}</div>` : ""}
-      ${p?.error ? `<div class="err">Plaid item error: ${esc(p.error)}</div>` : ""}
-      ${p?.transactions_last_failure && p.transactions_last_failure > (p.transactions_last_success || "") ? `<div class="err">Last transactions update failed ${when(p.transactions_last_failure)}</div>` : ""}
-      ${i.plaid_error ? `<div class="err">Could not reach Plaid for this item: ${esc(i.plaid_error)}</div>` : ""}
-      <table><thead><tr><th class="c">Show</th><th>Account</th><th>Owner</th><th>Type</th><th class="num">Balance</th><th>Balance as of</th></tr></thead><tbody>
-      ${[...i.accounts].sort((x, y) => cmp(x.name, y.name) || cmp(x.mask, y.mask)).map((a) => `<tr class="${a.hidden ? "off" : ""}">
-        <td class="c keep"><label class="switch" title="${a.hidden ? "Hidden" : "Shown"} in the accounts view"><input type="checkbox" role="switch" data-acct="${esc(a.account_id)}" ${a.hidden ? "" : "checked"} aria-label="Show ${esc(a.name)}"><span></span></label></td>
-        <td>${esc(a.name)}${a.mask ? " ··" + esc(a.mask) : ""}${a.hidden ? ' <span class="muted keep">(hidden)</span>' : ""}</td>
-        <td class="keep">${ownerSelect(a, owners)}</td><td>${esc(a.group)}</td>
-        <td class="num">${usd(a.balance, a.currency)}</td><td>${when(a.updated_at)}</td></tr>`).join("")}
-      </tbody></table></div>`;
-  };
-
-  // Group connections by financial institution; the group header rolls up counts and the worst health.
-  const byInst = new Map();
-  for (const i of items) (byInst.get(i.institution) ?? byInst.set(i.institution, []).get(i.institution)).push(i);
-  const rank = { ok: 0, warn: 1, bad: 2 };
-  $("#items").innerHTML = [...byInst.entries()].sort(([a], [b]) => cmp(a, b)).map(([inst, list]) => {
-    list.sort((a, b) => cmp(a.label, b.label));
-    const worst = list.map((i) => health(i)).reduce((w, h) => (rank[h[0]] > rank[w[0]] ? h : w), ["ok", "Healthy"]);
-    const accts = list.reduce((n, i) => n + i.accounts.length, 0);
-    return `<section class="inst">
-      <div class="insthead"><h2>${esc(inst)}</h2>
-        <span class="muted">${list.length} connection${list.length === 1 ? "" : "s"} · ${accts} account${accts === 1 ? "" : "s"}</span>
-        <span class="pill ${worst[0]}">${worst[1]}</span></div>
-      <div class="instbody">${list.map(card).join("")}</div></section>`;
-  }).join("") || '<p class="muted">No banks linked yet.</p>';
-  document.querySelectorAll("[data-rename]").forEach((b) => b.onclick = () => rename(items.find((i) => i.item_id === b.dataset.rename)));
-  document.querySelectorAll("[data-unlink]").forEach((b) => b.onclick = () => unlink(items.find((i) => i.item_id === b.dataset.unlink)));
-  document.querySelectorAll("[data-acct]").forEach((box) => box.onchange = () => setHidden(box));
-  document.querySelectorAll("[data-owner-acct]").forEach((sel) => sel.onchange = () => reassign(sel));
-}
-
-// Reassign an account to a different owner. Only the account's owner changes; it stays on the same Plaid
-// connection, so syncing, billing and the other accounts under that login are unaffected.
-function ownerSelect(a, owners) {
-  const opts = [`<option value="">Detected: ${esc(a.owner_detected ?? "none")}</option>`,
-    ...owners.map((o) => `<option value="${esc(o)}" ${a.owner_override === o ? "selected" : ""}>${esc(o)}</option>`)];
-  // A manual owner that no other account uses still has to appear in the list.
-  if (a.owner_override && !owners.includes(a.owner_override)) opts.splice(1, 0, `<option value="${esc(a.owner_override)}" selected>${esc(a.owner_override)}</option>`);
-  opts.push('<option value="__new__">New owner…</option>');
-  return `<select class="ownersel" data-owner-acct="${esc(a.account_id)}" data-prev="${esc(a.owner_override ?? "")}" aria-label="Owner of ${esc(a.name)}">${opts.join("")}</select>`;
-}
-
-async function saveOwner(accountId, owner) {
-  await api("/api/accounts/" + encodeURIComponent(accountId), { method: "PATCH", json: { owner } });
-  await load(); // connection labels and the duplicate check depend on owners
-}
-
-async function reassign(sel) {
-  const id = sel.dataset.ownerAcct;
-  try {
-    if (sel.value !== "__new__") return await saveOwner(id, sel.value);
-    const dlg = $("#ownerdlg"), input = $("#ownername");
-    input.value = ""; dlg.showModal(); input.focus();
-    const revert = () => { sel.value = sel.dataset.prev; };
-    $("#ownercancel").onclick = () => { dlg.close(); revert(); };
-    $("#ownerform").onsubmit = async (ev) => {
-      ev.preventDefault();
-      if (!input.value.trim()) return;
-      try { dlg.close(); await saveOwner(id, input.value.trim()); } catch (e) { alert("Could not update: " + e.message); revert(); }
-    };
-  } catch (e) { alert("Could not update: " + e.message); sel.value = sel.dataset.prev; }
-}
-
-// Hidden accounts stay synced but are left out of the accounts view, totals, register and duplicate checks.
-async function setHidden(box) {
-  const hidden = !box.checked;
-  box.disabled = true;
-  try {
-    await api("/api/accounts/" + encodeURIComponent(box.dataset.acct), { method: "PATCH", json: { hidden } });
-    for (const i of items) for (const a of i.accounts) if (a.account_id === box.dataset.acct) a.hidden = hidden;
-    render(); loadDups();
-  } catch (e) { box.checked = !box.checked; box.disabled = false; alert("Could not update: " + e.message); }
-}
-
-function rename(i) {
-  const dlg = $("#renamedlg"), input = $("#rnname");
-  $("#rntitle").textContent = i.institution; input.value = i.nickname ?? "";
-  input.placeholder = i.owners.length ? i.owners.join(", ") : "e.g. Alex's Schwab";
-  dlg.showModal(); input.focus();
-  $("#rncancel").onclick = () => dlg.close();
-  $("#renameform").onsubmit = async (ev) => {
-    ev.preventDefault();
-    try { await api("/api/items/" + encodeURIComponent(i.item_id), { method: "PATCH", json: { nickname: input.value } }); dlg.close(); load(); }
-    catch (e) { alert("Could not rename: " + e.message); }
-  };
-}
-
-function unlink(i) {
-  const dlg = $("#unlinkdlg"), err = $("#ulerr"), go = $("#ulgo");
-  $("#ultitle").textContent = `Unlink ${i.institution} · ${i.label}?`;
-  $("#ulbody").innerHTML = `This revokes the connection at Plaid, which ends access and billing for it, and permanently deletes its
-    <b>${i.accounts.length} account${i.accounts.length === 1 ? "" : "s"}</b> and <b>${i.transaction_count.toLocaleString()} stored transaction${i.transaction_count === 1 ? "" : "s"}</b> from this app.
-    It can't be undone. To bring it back you'd link the bank again and log in at the bank.`;
-  err.hidden = true; go.disabled = false; go.textContent = "Unlink";
-  dlg.showModal();
-  $("#ulcancel").onclick = () => dlg.close();
-  $("#unlinkform").onsubmit = async (ev) => {
-    ev.preventDefault(); go.disabled = true; go.textContent = "Unlinking…";
-    try {
-      await api("/api/items/" + encodeURIComponent(i.item_id), { method: "DELETE" });
-      dlg.close(); load();
-    } catch (e) { err.textContent = e.message; err.hidden = false; go.disabled = false; go.textContent = "Unlink"; }
-  };
-}
-load();
-</script>
+<script type="module" src="/js/connections.js"></script>
 </body>
 </html>

@@ -49,6 +49,9 @@ src/sync.ts           Per-connection sync: balances, owners, transactions
 src/classify.ts       Account grouping, owner-name normalization, signed balances
 src/duplicates.ts     Same account seen through several connections
 src/plaidStatus.ts    Cached /item/get status for the Connections page
-public/               The three pages plus shared.css / shared.js
+public/*.html         The three pages (markup and page-specific CSS)
+public/js/            One script per page; accounts is split into sidebar, register, link and sync modules
+public/shared.js/css  Helpers, dark theme, buttons and dialogs used by every page
 test/                 node:test suites (pure logic, API, sync with Plaid stubbed)
 ```
+`pnpm typecheck` checks both the server (`tsconfig.json`) and the browser scripts (`tsconfig.web.json`, non-strict).

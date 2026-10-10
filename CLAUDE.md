@@ -32,7 +32,7 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 ## Plaid facts
 - Link requests `transactions` (required) plus `investments` and `identity` if supported. `products` is an intersection filter, so adding required products hides banks. Plaid rejects a token with no product.
 - OAuth banks (Wells Fargo, Amex, Schwab) need `PLAID_REDIRECT_URI=https://<host>/accounts` registered in the Plaid Dashboard; Link resumes on `/accounts` via `resumeOAuth()`.
-- Billing is per Item (one login at one institution). Free Trial plan = 10 Items (which plan this account is on is unverified). Unlink calls `itemRemove` (ends billing) then deletes local rows.
+- Billing is per Item (one login at one institution). The account was approved for full Production access in Oct 2026, so the Free Trial's 10-Item cap no longer applies. Unlink calls `itemRemove` (ends billing) then deletes local rows.
 - Brokerage/401(k)/IRA accounts are balance-only by design.
 
 ## Deployment

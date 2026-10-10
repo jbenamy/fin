@@ -41,6 +41,9 @@ test("accounts API: signed balance, kind, group rank; hidden accounts excluded u
   assert.equal(rows.find((a: any) => a.account_id === "brk").kind, "investment");
   assert.ok(rows.find((a: any) => a.account_id === "chk").group_rank < card.group_rank);
   assert.equal(rows.find((a: any) => a.account_id === "chk").owner, "Alex Smith");
+  // The connection label names only the account's own owner, not everyone on the login.
+  assert.equal(rows.find((a: any) => a.account_id === "chk").connection, "Alex Smith");
+  assert.equal(rows.find((a: any) => a.account_id === "joint").connection, "Sam Smith");
 
   await patch("/api/accounts/joint", { hidden: true });
   assert.ok(!(await get("/api/accounts")).some((a: any) => a.account_id === "joint"));

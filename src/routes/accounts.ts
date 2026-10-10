@@ -19,9 +19,17 @@ accounts.get("/api/accounts", (req, res) => {
   res.json(rows.map((a) => ({
     ...accountDto(a),
     institution: a.institution, last_synced: a.last_synced, last_error: a.last_error, identity_status: a.identity_status,
-    connection: conn.get(a.item_id)?.label ?? null, multiple_connections: conn.get(a.item_id)?.multiple ?? false,
+    connection: accountConnectionLabel(a, conn.get(a.item_id)), multiple_connections: conn.get(a.item_id)?.multiple ?? false,
   })));
 });
+
+// Per-account connection label. A connection's owner-derived label lists everyone on the login, so an
+// account with its own owner shows just that name; a nickname still wins.
+function accountConnectionLabel(a: Row, c: { label: string; nickname: string | null } | undefined) {
+  if (!c) return null;
+  if (c.nickname) return c.nickname;
+  return a.owner !== "Unassigned" ? a.owner : c.label;
+}
 
 // The selectable account groups, in display order.
 accounts.get("/api/groups", (_req, res) => { res.json(GROUP_ORDER); });

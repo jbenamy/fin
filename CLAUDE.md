@@ -18,6 +18,7 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 - `src/sync.ts` per-connection sync: balances (`accountsGet`) -> owners (`identityGet`, once) -> transactions (`transactionsSync`, cash accounts only). Investment accounts never get transactions.
 - **Display rules live on the server.** `src/dto.ts` (`accountDto`) supplies `balance` (credit/loan already negative), `kind` (cash/investment/debt), `group`, `group_rank`. Pages must not re-derive these. `GROUP_ORDER` exists only in `src/classify.ts`.
 - **Effective owner = `account_view.owner`** (manual `owner_override`, else Plaid-detected, else "Unassigned"). Query the view, never re-write the COALESCE.
+- Connection labels (`connectionInfo()` in `routes/connections.ts`) tell apart several logins at one bank: nickname, else all owners on the login, else the item-id tail. `/api/accounts` gives each account its own `connection` label (nickname, else that account's owner) so cards never list everyone on a shared login; the Connections page keeps the login-wide label.
 - `src/plaidStatus.ts` caches `/item/get` for 5 min (`?refresh=1` bypasses; sync/unlink/consent invalidate).
 - `src/db.ts`: tables + `addColumn` migrations (additive only) + the view. DB is `$DATA_DIR/fin.db`.
 - Frontend: `public/*.html` (markup + page CSS), `public/js/` one entry script per page (accounts is split into sidebar/register/link/sync), `public/shared.{js,css}`. Dark theme only.
@@ -36,10 +37,10 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 - Brokerage/401(k)/IRA accounts are balance-only by design.
 
 ## Deployment
-- Host `user@your-host.example.com`, stack dir `/opt/stacks/fin`, compose project `fin`, volume `fin_fin-data` (DB at `/data/fin.db`). URL `https://fin.example.com` (internal, Twingate-only, via the shared Caddy docker-proxy on the external `apps` network; no published ports).
+- Host `user@your-host.example.com` (placeholder: the repo is public; the real host is the one in `~/.ssh/config`, user root, and is not recorded here), stack dir `/opt/stacks/fin`, compose project `fin`, volume `fin_fin-data` (DB at `/data/fin.db`). URL `https://fin.example.com` (internal, Twingate-only, via the shared Caddy docker-proxy on the external `apps` network; no published ports).
 - Deploy: rsync the repo (`--delete`, excluding `node_modules data dist .env .git test`), then `docker compose up -d --build` in `/opt/stacks/fin`. `.env` lives only on the VM (mode 600); never copy secrets into the repo.
 - **Use one multiplexed SSH connection per deploy** (`-o ControlMaster=auto -o ControlPath=/tmp/sa-%C -o ControlPersist=...`). Several rapid separate connections have hung or been dropped. If ssh reports "The agent has no identities", the local SSH key agent needs unlocking; retrying won't help.
-- Verify a deploy by hashing `dist/` and `public/` inside the container against a fresh local `pnpm build`.
+- Verify a deploy by hashing `dist/` and `public/` inside the container (`docker compose exec -T app`, workdir `/app`; no wget/curl in the image) against a fresh local `pnpm build`. The healthcheck takes ~30s to leave "starting".
 
 ## Gotchas
 - There is **no app authentication** (removed deliberately); access control is network-level. Plaid access tokens are stored in plaintext in SQLite.

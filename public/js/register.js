@@ -1,6 +1,6 @@
 // The transaction register: 100 rows at a time (lazy-loaded), optionally filtered by payee.
 // The page provides #payeeq, #payeelist, #filterchip, #txbody and #txmore; the filter resets when the scope changes.
-import { $, esc, api } from "/shared.js";
+import { $, esc, plural, api } from "/shared.js";
 
 let observer = null, seq = 0, currentId = null, filter = { payee: "", q: "" };
 
@@ -13,7 +13,7 @@ const txUrl = (id, cursor) => "/api/transactions?limit=100&" + scopeParams(id) +
 function lazyLoad(id, mySeq, first, row) {
   const sentinel = $("#txmore"), body = $("#txbody");
   let next = first.next, loaded = first.rows.length, loading = false;
-  const status = () => { sentinel.textContent = next ? "" : loaded ? `${loaded.toLocaleString()} transaction${loaded === 1 ? "" : "s"}` : ""; };
+  const status = () => { sentinel.textContent = next ? "" : loaded ? plural(loaded, "transaction") : ""; };
   status();
   if (!next) return;
   async function more() {

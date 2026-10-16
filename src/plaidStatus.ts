@@ -1,4 +1,4 @@
-import { plaid } from "./plaid.js";
+import { plaid, plaidError } from "./plaid.js";
 
 export interface PlaidItemStatus {
   error: string | null; update_type: string | undefined; consent_expiration_time: string | null; consented_products: string[];
@@ -33,7 +33,7 @@ export async function getPlaidStatus(itemId: string, accessToken: string, force 
     };
     cache.set(itemId, { at: Date.now(), info });
     return { info, error: null };
-  } catch (e: any) {
-    return { info: null, error: e?.response?.data?.error_code ?? String(e) };
+  } catch (e) {
+    return { info: null, error: plaidError(e)?.error_code ?? String(e) };
   }
 }

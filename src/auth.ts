@@ -4,8 +4,9 @@ import { db } from "./db.js";
 
 // Cookie sessions for passkey login. The cookie holds a random token; the DB keeps only its sha256.
 const COOKIE = "fin_session";
-const SESSION_DAYS = 30;
 const DAY = 86400e3;
+const SESSION_MS = 30 * DAY;
+const iso = (ms: number) => new Date(ms).toISOString();
 
 export const hashToken = (token: string) => createHash("sha256").update(token).digest("hex");
 export const newToken = () => randomBytes(32).toString("base64url");
@@ -22,17 +23,17 @@ function cookies(req: Request): Record<string, string> {
 /** Store a new session for `passkeyId` and return its raw token (exported for tests). */
 export function createSession(passkeyId: string) {
   const token = newToken(), now = Date.now();
-  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(new Date(now).toISOString());
+  db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(iso(now));
   db.prepare("INSERT INTO sessions (token_hash, passkey_id, created_at, expires_at) VALUES (?,?,?,?)")
-    .run(hashToken(token), passkeyId, new Date(now).toISOString(), new Date(now + SESSION_DAYS * DAY).toISOString());
+    .run(hashToken(token), passkeyId, iso(now), iso(now + SESSION_MS));
   return token;
 }
 
-const setCookie = (req: Request, res: Response, token: string, maxAge: number) =>
-  res.append("Set-Cookie", `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${req.secure ? "; Secure" : ""}`);
+const setCookie = (req: Request, res: Response, token: string, maxAgeMs = SESSION_MS) =>
+  res.append("Set-Cookie", `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeMs / 1000}${req.secure ? "; Secure" : ""}`);
 
 export function signIn(req: Request, res: Response, passkeyId: string) {
-  setCookie(req, res, createSession(passkeyId), SESSION_DAYS * 86400);
+  setCookie(req, res, createSession(passkeyId));
 }
 
 export function signOut(req: Request, res: Response) {
@@ -47,11 +48,11 @@ export function sessionPasskey(req: Request, res?: Response): string | null {
   if (!token) return null;
   const row = db.prepare("SELECT passkey_id, expires_at FROM sessions WHERE token_hash = ?").get(hashToken(token)) as
     { passkey_id: string; expires_at: string } | undefined;
-  if (!row || row.expires_at < new Date().toISOString()) return null;
-  const left = new Date(row.expires_at).getTime() - Date.now();
-  if (res && left < (SESSION_DAYS - 1) * DAY) {
-    db.prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ?").run(new Date(Date.now() + SESSION_DAYS * DAY).toISOString(), hashToken(token));
-    setCookie(req, res, token, SESSION_DAYS * 86400);
+  const now = Date.now();
+  if (!row || row.expires_at < iso(now)) return null;
+  if (res && new Date(row.expires_at).getTime() - now < SESSION_MS - DAY) {
+    db.prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ?").run(iso(now + SESSION_MS), hashToken(token));
+    setCookie(req, res, token);
   }
   return row.passkey_id;
 }

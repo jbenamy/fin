@@ -1,5 +1,5 @@
 // /login: sign in with a passkey, create the very first one, or add one from an invite link.
-import { $, api } from "/shared.js";
+import { $, api, showError as show } from "/shared.js";
 import { registerPasskey, signInWithPasskey, supported } from "/js/webauthn.js";
 
 const params = new URLSearchParams(location.search);
@@ -7,7 +7,7 @@ const invite = params.get("invite");
 // Only same-site paths: "//host" or "/\host" would leave the app.
 const next = /^\/(?![/\\])/.test(params.get("next") ?? "") ? params.get("next") : "/";
 
-function showError(e) { const el = $("#err"); el.textContent = e ? e.message : ""; el.hidden = !e; }
+const showError = (e) => show($("#err"), e);
 
 /** Run `fn` with the button busy; on success go to `next`. */
 function action(button, fn) {

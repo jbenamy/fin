@@ -1,9 +1,10 @@
 import type { RequestHandler } from "express";
+import { plaidError } from "./plaid.js";
 
 /** Async route wrapper: log the failure and answer with Plaid's error message (or the exception text) as JSON. */
 export const wrap = (fn: RequestHandler): RequestHandler => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch((e) => {
-    const d = e?.response?.data;
+    const d = plaidError(e);
     console.error(d ?? e);
     res.status(500).json({ error: d?.error_message ?? String(e) });
   });

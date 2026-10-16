@@ -1,10 +1,9 @@
 // /passkeys: the passkeys that can sign in, adding one here or via an invite link, removing one, signing out.
-import { $, $$, esc, cmp, api, openDialog } from "/shared.js";
+import { $, $$, esc, cmp, api, openDialog, showError as fail } from "/shared.js";
 import { registerPasskey } from "/js/webauthn.js";
 
 let passkeys = [];
 const date = (iso) => iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—";
-const fail = (el, e) => { el.textContent = e.message; el.hidden = false; };
 
 function render() {
   $("#rows").innerHTML = [...passkeys].sort((a, b) => cmp(a.label, b.label)).map((p) => `<tr>

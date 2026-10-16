@@ -9,6 +9,12 @@ const ids = (list) => (list ?? []).map((c) => ({ ...c, id: fromB64(c.id) }));
 const friendly = (e) => e?.name === "NotAllowedError" ? new Error("Cancelled or timed out") :
   e?.name === "InvalidStateError" ? new Error("This device already has a Fin passkey") : e;
 
+/** The JSON shape @simplewebauthn/server expects, around the ceremony-specific `response` fields. */
+const credentialJSON = (cred, response) => ({ response: {
+  id: cred.id, rawId: toB64(cred.rawId), type: cred.type, clientExtensionResults: cred.getClientExtensionResults(),
+  authenticatorAttachment: cred.authenticatorAttachment ?? undefined, response,
+} });
+
 export const supported = () => !!window.PublicKeyCredential;
 
 /** Sign in with any registered passkey (discoverable, so no username). */
@@ -19,12 +25,10 @@ export async function signInWithPasskey() {
   try { cred = await navigator.credentials.get({ publicKey: { ...o, challenge: fromB64(o.challenge), allowCredentials: ids(o.allowCredentials) } }); }
   catch (e) { throw friendly(e); }
   const r = cred.response;
-  return api("/api/auth/login/verify", { method: "POST", json: { response: {
-    id: cred.id, rawId: toB64(cred.rawId), type: cred.type, clientExtensionResults: cred.getClientExtensionResults(),
-    authenticatorAttachment: cred.authenticatorAttachment ?? undefined,
-    response: { clientDataJSON: toB64(r.clientDataJSON), authenticatorData: toB64(r.authenticatorData), signature: toB64(r.signature),
-      userHandle: r.userHandle ? toB64(r.userHandle) : undefined },
-  } } });
+  return api("/api/auth/login/verify", { method: "POST", json: credentialJSON(cred, {
+    clientDataJSON: toB64(r.clientDataJSON), authenticatorData: toB64(r.authenticatorData), signature: toB64(r.signature),
+    userHandle: r.userHandle ? toB64(r.userHandle) : undefined,
+  }) });
 }
 
 /** Create a passkey named `label` on this device. `invite` is the token from an invite link, if any. */
@@ -38,9 +42,7 @@ export async function registerPasskey(label, invite) {
     } });
   } catch (e) { throw friendly(e); }
   const r = cred.response;
-  return api("/api/auth/register/verify", { method: "POST", json: { response: {
-    id: cred.id, rawId: toB64(cred.rawId), type: cred.type, clientExtensionResults: cred.getClientExtensionResults(),
-    authenticatorAttachment: cred.authenticatorAttachment ?? undefined,
-    response: { clientDataJSON: toB64(r.clientDataJSON), attestationObject: toB64(r.attestationObject), transports: r.getTransports?.() ?? [] },
-  } } });
+  return api("/api/auth/register/verify", { method: "POST", json: credentialJSON(cred, {
+    clientDataJSON: toB64(r.clientDataJSON), attestationObject: toB64(r.attestationObject), transports: r.getTransports?.() ?? [],
+  }) });
 }

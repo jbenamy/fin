@@ -1,5 +1,5 @@
 // /accounts: sidebar + register for the selected account or owner.
-import { $, $$, esc, cmp, plural, usd, cls, ownerList, api, openDialog } from "/shared.js";
+import { $, $$, esc, plural, usd, cls, ownerList, api, openDialog, showError } from "/shared.js";
 import { renderSidebar, setAllCollapsed } from "/js/sidebar.js";
 import { mountRegister } from "/js/register.js";
 import { initLink, startLink, resumeOAuth } from "/js/link.js";
@@ -74,16 +74,16 @@ function editAccount(a) {
   owner.value = a.owner_override ?? "";
   owner.placeholder = a.owner_detected ? `Detected: ${a.owner_detected}` : "No owner detected";
   $("#edhint").textContent = "Leave blank to use the detected owner.";
-  $("#owners").innerHTML = [...new Set(accounts.map((x) => x.owner).filter((o) => o !== "Unassigned"))].sort(cmp).map((o) => `<option value="${esc(o)}">`).join("");
+  $("#owners").innerHTML = ownerList(accounts).filter((o) => o !== "Unassigned").map((o) => `<option value="${esc(o)}">`).join("");
   group.innerHTML = `<option value="">Automatic</option>` + groups.map((g) => `<option ${a.group_override === g ? "selected" : ""}>${g}</option>`).join("");
-  err.hidden = true;
+  showError(err, null);
   openDialog(dlg, {
     async onSubmit() {
       const save = $("#edsave"); save.disabled = true;
       try {
         await api("/api/accounts/" + encodeURIComponent(a.account_id), { method: "PATCH", json: { owner: owner.value, group: group.value } });
         dlg.close(); await load();
-      } catch (e) { err.textContent = e.message; err.hidden = false; }
+      } catch (e) { showError(err, e); }
       save.disabled = false;
     },
   });

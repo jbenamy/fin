@@ -1,5 +1,5 @@
 // /connections: linked banks grouped by institution, with health, per-account owner and visibility, duplicates, rename and unlink.
-import { $, $$, esc, cmp, plural, usd, byName, api, openDialog } from "/shared.js";
+import { $, $$, esc, cmp, plural, usd, byName, ownerList, api, openDialog, showError } from "/shared.js";
 
 const STALE_HOURS = 36; // a daily sync should never be older than this
 let items = [];
@@ -102,7 +102,7 @@ function institution(name, list, owners) {
 function render() {
   const fetched = items.map((i) => i.plaid?.fetched_at).filter(Boolean).sort()[0];
   $("#sub").textContent = `${plural(items.length, "linked connection")}${fetched ? " · Plaid status as of " + new Date(fetched).toLocaleTimeString() : ""}`;
-  const owners = [...new Set(items.flatMap((i) => i.accounts.map((a) => a.owner)).filter((o) => o !== "Unassigned"))].sort(cmp);
+  const owners = ownerList(items.flatMap((i) => i.accounts)).filter((o) => o !== "Unassigned");
   const byInstitution = new Map();
   for (const i of items) (byInstitution.get(i.institution) ?? byInstitution.set(i.institution, []).get(i.institution)).push(i);
   $("#items").innerHTML = [...byInstitution].sort(([a], [b]) => cmp(a, b)).map(([name, list]) => institution(name, list, owners)).join("")
@@ -177,12 +177,12 @@ function unlink(i) {
   $("#ulbody").innerHTML = `This revokes the connection at Plaid, which ends access and billing for it, and permanently deletes its
     <b>${plural(i.accounts.length, "account")}</b> and <b>${plural(i.transaction_count, "stored transaction")}</b> from this app.
     It can't be undone. To bring it back you'd link the bank again and log in at the bank.`;
-  err.hidden = true; go.disabled = false; go.textContent = "Unlink";
+  showError(err, null); go.disabled = false; go.textContent = "Unlink";
   openDialog(dlg, {
     async onSubmit() {
       go.disabled = true; go.textContent = "Unlinking…";
       try { await api("/api/items/" + encodeURIComponent(i.item_id), { method: "DELETE" }); dlg.close(); load(); }
-      catch (e) { err.textContent = e.message; err.hidden = false; go.disabled = false; go.textContent = "Unlink"; }
+      catch (e) { showError(err, e); go.disabled = false; go.textContent = "Unlink"; }
     },
   });
 }

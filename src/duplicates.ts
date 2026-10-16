@@ -17,12 +17,7 @@ const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
  * "high" when balances also agree to the cent, "likely" otherwise (balances can differ by refresh timing).
  */
 export function findDuplicates(accounts: DupAccount[]): { accounts: DupGroup[]; connections: DupConnection[] } {
-  const buckets = new Map<string, DupAccount[]>();
-  for (const a of accounts) {
-    if (!a.mask) continue;
-    const key = [norm(a.institution), a.type, a.mask].join("|");
-    (buckets.get(key) ?? buckets.set(key, []).get(key)!).push(a);
-  }
+  const buckets = Map.groupBy(accounts.filter((a) => a.mask), (a) => [norm(a.institution), a.type, a.mask].join("|"));
   const groups: DupGroup[] = [];
   for (const list of buckets.values()) {
     if (new Set(list.map((a) => a.item_id)).size < 2) continue;
@@ -37,12 +32,9 @@ export function findDuplicates(accounts: DupAccount[]): { accounts: DupGroup[]; 
   groups.sort((a, b) => a.institution.localeCompare(b.institution) || a.mask.localeCompare(b.mask));
 
   // Whole connections that overlap completely: the same bank login linked twice (each Item is billed).
-  const byItem = new Map<string, DupAccount[]>();
-  for (const a of accounts) (byItem.get(a.item_id) ?? byItem.set(a.item_id, []).get(a.item_id)!).push(a);
-  const sig = (l: DupAccount[]) => norm(l[0].institution) + "|" + l.map((a) => `${a.type}:${a.mask ?? "?"}`).sort().join(",");
-  const bySig = new Map<string, string[]>();
-  for (const [id, l] of byItem) if (l.every((a) => a.mask)) (bySig.get(sig(l)) ?? bySig.set(sig(l), []).get(sig(l))!).push(id);
-  const connections = [...bySig.values()].filter((ids) => ids.length > 1)
-    .map((ids) => ({ institution: byItem.get(ids[0])![0].institution, item_ids: ids }));
+  const logins = [...Map.groupBy(accounts, (a) => a.item_id).values()].filter((l) => l.every((a) => a.mask));
+  const sig = (l: DupAccount[]) => norm(l[0].institution) + "|" + l.map((a) => `${a.type}:${a.mask}`).sort().join(",");
+  const connections = [...Map.groupBy(logins, sig).values()].filter((same) => same.length > 1)
+    .map((same) => ({ institution: same[0][0].institution, item_ids: same.map((l) => l[0].item_id) }));
   return { accounts: groups, connections };
 }

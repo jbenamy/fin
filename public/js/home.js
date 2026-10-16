@@ -1,5 +1,5 @@
 // "/": net worth, headline tiles, and a card for every account (owner -> account type).
-import { $, $$, esc, cmp, plural, usd, sum, ownerList, byName, api, store } from "/shared.js";
+import { $, $$, esc, plural, usd, sum, ownerList, byGroup, balanceOnly, api, store } from "/shared.js";
 
 let accounts = [], owner = null; // owner === null means everyone
 // Zero-balance accounts are hidden by default; the choice is remembered.
@@ -19,14 +19,9 @@ function card(a, multi) {
 
 // One owner's section: accounts grouped by type, in the same order as the sidebar.
 function ownerSection(name, mine, multi) {
-  const rank = (g) => mine.find((a) => a.group === g).group_rank;
-  const types = [...new Set(mine.map((a) => a.group))].sort((x, y) => rank(x) - rank(y) || cmp(x, y));
   return `<section><div class="owner"><h2>${esc(name)}</h2><span class="muted">${plural(mine.length, "account")}</span><span class="total">${usd(sum(mine))}</span></div>
-    ${types.map((type) => {
-      const list = mine.filter((a) => a.group === type).sort(byName);
-      return `<div class="grp"><span>${esc(type)}${list.every((a) => a.kind === "investment") ? " (balance only)" : ""}</span><span class="total">${usd(sum(list))}</span></div>
-        <div class="cards">${list.map((a) => card(a, multi)).join("")}</div>`;
-    }).join("")}</section>`;
+    ${byGroup(mine).map(([type, list]) => `<div class="grp"><span>${esc(type)}${balanceOnly(list)}</span><span class="total">${usd(sum(list))}</span></div>
+      <div class="cards">${list.map((a) => card(a, multi)).join("")}</div>`).join("")}</section>`;
 }
 
 function render() {

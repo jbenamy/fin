@@ -1,5 +1,5 @@
 // The accounts sidebar: owners -> account types -> accounts, with collapse state that survives reloads.
-import { $, $$, esc, cmp, plural, usd, cls, sum, ownerList, byName, store, onActivate } from "/shared.js";
+import { $, $$, esc, plural, usd, cls, sum, ownerList, byGroup, balanceOnly, store, onActivate } from "/shared.js";
 
 let collapsed = new Set();
 try { collapsed = new Set(JSON.parse(store.get("collapsed", "[]"))); } catch {}
@@ -24,16 +24,14 @@ const accountRow = (a) => `<div class="acct ${ctx.selected === a.account_id ? "s
 
 function ownerBlock(owner) {
   const mine = ctx.accounts.filter((a) => a.owner === owner), key = "o:" + owner, isCollapsed = collapsed.has(key);
-  const rank = (g) => mine.find((a) => a.group === g).group_rank;
-  const types = [...new Set(mine.map((a) => a.group))].sort((a, b) => rank(a) - rank(b) || cmp(a, b));
   let html = `<div class="owner ${ctx.selected === key ? "sel" : ""}" role="button" tabindex="0" data-owner="${esc(key)}" title="${esc(owner)}\n${plural(mine.length, "account")} · ${usd(sum(mine))}\nClick to show all their transactions">
     <span class="otoggle" role="button" tabindex="0" aria-label="${isCollapsed ? "Expand" : "Collapse"} ${esc(owner)}" aria-expanded="${!isCollapsed}" data-toggle="${esc(key)}">${chev(key)}</span>
     <span class="oname">${esc(owner)}${isCollapsed ? count(mine.length) : ""}</span><span class="num ${cls(sum(mine))}">${usd(sum(mine))}</span></div>`;
   if (isCollapsed) return html;
-  for (const type of types) {
-    const list = mine.filter((a) => a.group === type).sort(byName), gk = `g:${owner}|${type}`, open = !collapsed.has(gk);
+  for (const [type, list] of byGroup(mine)) {
+    const gk = `g:${owner}|${type}`, open = !collapsed.has(gk);
     html += `<div class="grp" role="button" tabindex="0" aria-expanded="${open}" data-toggle="${esc(gk)}" title="${esc(`${type}\n${plural(list.length, "account")} · ${usd(sum(list))}\nClick to ${open ? "collapse" : "expand"}`)}">
-      <span>${chev(gk)}${esc(type)}${list.every((a) => a.kind === "investment") ? " (balance only)" : ""}${open ? "" : count(list.length)}</span><span class="num">${usd(sum(list))}</span></div>`;
+      <span>${chev(gk)}${esc(type)}${balanceOnly(list)}${open ? "" : count(list.length)}</span><span class="num">${usd(sum(list))}</span></div>`;
     if (open) html += list.map(accountRow).join("");
   }
   return html;

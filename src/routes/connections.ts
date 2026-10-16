@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { db } from "../db.js";
+import { db, transaction } from "../db.js";
 import { accountDto } from "../dto.js";
 import { findDuplicates, type DupAccount } from "../duplicates.js";
 import { cleanLabel, wrap } from "../http.js";
-import { plaid } from "../plaid.js";
+import { plaid, plaidError } from "../plaid.js";
 import { getPlaidStatus, invalidatePlaidStatus } from "../plaidStatus.js";
 import type { AccountViewRow, ItemRow } from "../types.js";
 
@@ -13,18 +13,15 @@ export const connections = Router();
 // label: the user's nickname, else the owner name(s) on its accounts, else the tail of its item id.
 export function connectionInfo() {
   const items = db.prepare("SELECT item_id, institution, nickname, created_at FROM items").all() as unknown as Pick<ItemRow, "item_id" | "institution" | "nickname" | "created_at">[];
-  const owners = new Map<string, Set<string>>();
-  for (const a of db.prepare("SELECT item_id, owner FROM account_view WHERE owner != 'Unassigned'").all() as unknown as { item_id: string; owner: string }[]) {
-    (owners.get(a.item_id) ?? owners.set(a.item_id, new Set()).get(a.item_id)!).add(a.owner);
-  }
-  const perInstitution = new Map<string, number>();
-  for (const i of items) perInstitution.set(i.institution, (perInstitution.get(i.institution) ?? 0) + 1);
+  const owners = Map.groupBy(db.prepare("SELECT DISTINCT item_id, owner FROM account_view WHERE owner != 'Unassigned'")
+    .all() as unknown as { item_id: string; owner: string }[], (a) => a.item_id);
+  const perInstitution = Map.groupBy(items, (i) => i.institution);
   return new Map(items.map((i) => {
-    const o = [...(owners.get(i.item_id) ?? [])].sort();
+    const o = (owners.get(i.item_id) ?? []).map((a) => a.owner).sort();
     const suffix = i.item_id.slice(-6);
     return [i.item_id, {
       label: i.nickname || o.join(", ") || `…${suffix}`, owners: o, suffix, nickname: i.nickname,
-      created_at: i.created_at, multiple: (perInstitution.get(i.institution) ?? 0) > 1,
+      created_at: i.created_at, multiple: perInstitution.get(i.institution)!.length > 1,
     }];
   }));
 }
@@ -69,18 +66,16 @@ connections.delete("/api/items/:id", wrap(async (req, res) => {
   const item = db.prepare("SELECT access_token FROM items WHERE item_id = ?").get(id) as { access_token: string } | undefined;
   if (!item) return void res.status(404).json({ error: "unknown connection" });
   try { await plaid.itemRemove({ access_token: item.access_token }); }
-  catch (e: any) {
+  catch (e) {
     // Already gone at Plaid's end: still clean up locally. Any other failure aborts so we never orphan a live token.
-    const code = e?.response?.data?.error_code;
+    const code = plaidError(e)?.error_code;
     if (code !== "ITEM_NOT_FOUND" && code !== "INVALID_ACCESS_TOKEN") throw e;
   }
-  db.exec("BEGIN");
-  try {
+  transaction(() => {
     db.prepare("DELETE FROM transactions WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
     db.prepare("DELETE FROM accounts WHERE item_id = ?").run(id);
     db.prepare("DELETE FROM items WHERE item_id = ?").run(id);
-    db.exec("COMMIT");
-  } catch (e) { db.exec("ROLLBACK"); throw e; }
+  });
   invalidatePlaidStatus(id);
   res.json({ ok: true });
 }));

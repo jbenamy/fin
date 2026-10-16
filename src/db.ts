@@ -40,6 +40,13 @@ CREATE TABLE IF NOT EXISTS transactions (
 CREATE INDEX IF NOT EXISTS tx_account_date ON transactions(account_id, date DESC);
 `);
 
+/** Run `fn` inside BEGIN/COMMIT, rolling back if it throws. */
+export function transaction<T>(fn: () => T): T {
+  db.exec("BEGIN");
+  try { const out = fn(); db.exec("COMMIT"); return out; }
+  catch (e) { db.exec("ROLLBACK"); throw e; }
+}
+
 function addColumn(table: string, column: string, def: string) {
   const cols = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
   if (!cols.some((c) => c.name === column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);

@@ -1,16 +1,17 @@
 import type { RemovedTransaction, Transaction } from "plaid";
 import { ownerFromNames } from "./classify.js";
-import { db } from "./db.js";
+import { db, transaction } from "./db.js";
 import { invalidatePlaidStatus } from "./plaidStatus.js";
-import { plaid } from "./plaid.js";
+import { plaid, plaidError } from "./plaid.js";
 import type { ItemRow } from "./types.js";
 
 export type SyncItem = Pick<ItemRow, "item_id" | "access_token" | "cursor" | "identity_status">;
 
+type Phase = "balances" | "owners" | "transactions";
 export type SyncEvent =
   | { event: "start"; institutions: string[] }
   | { event: "item_start"; institution: string }
-  | { event: "phase"; institution: string; phase: "balances" | "owners" | "transactions"; detail: string }
+  | { event: "phase"; institution: string; phase: Phase; detail: string }
   | { event: "item_done"; result: SyncResult }
   | { event: "done"; results: SyncResult[] };
 export type Progress = (e: SyncEvent) => void;
@@ -20,7 +21,6 @@ export interface SyncResult {
   accounts: number; registerAccounts: number; brokerageAccounts: number;
   added: number; modified: number; removed: number; ownersDetected: number;
 }
-
 
 const upsertAccount = db.prepare(`
   INSERT INTO accounts (account_id, item_id, name, mask, type, subtype, current_balance, available_balance, currency, updated_at)
@@ -52,7 +52,6 @@ async function syncBalances(item: SyncItem): Promise<{ registerAccounts: Set<str
 
 /** Detect account owners via Plaid Identity. Failure here never fails the sync. Stores names only. */
 async function syncOwners(item: SyncItem): Promise<number> {
-  if (item.identity_status) return 0;
   const setStatus = db.prepare("UPDATE items SET identity_status = ? WHERE item_id = ?");
   try {
     const { data } = await plaid.identityGet({ access_token: item.access_token });
@@ -64,8 +63,8 @@ async function syncOwners(item: SyncItem): Promise<number> {
     }
     setStatus.run("ok", item.item_id);
     return n;
-  } catch (e: any) {
-    const code = e?.response?.data?.error_code;
+  } catch (e) {
+    const code = plaidError(e)?.error_code;
     if (code === "ADDITIONAL_CONSENT_REQUIRED" || code === "INVALID_PRODUCT") setStatus.run("needs_consent", item.item_id);
     else if (code === "PRODUCTS_NOT_SUPPORTED") setStatus.run("unsupported", item.item_id);
     else console.error(`identity lookup failed for ${item.item_id}: ${code ?? "unknown error"}`);
@@ -86,14 +85,13 @@ async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, o
         more = data.has_more; next = data.next_cursor;
         onFetched(added.length + modified.length + removed.length);
       }
-    } catch (e: any) {
+    } catch (e) {
       // Data changed mid-pagination: restart from the last saved cursor.
-      if (e?.response?.data?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") continue;
+      if (plaidError(e)?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") continue;
       throw e;
     }
     const keep = (t: Transaction) => registerAccounts.has(t.account_id);
-    db.exec("BEGIN");
-    try {
+    transaction(() => {
       for (const t of [...added, ...modified]) {
         if (!keep(t)) continue;
         upsertTx.run(
@@ -103,8 +101,7 @@ async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, o
       }
       for (const r of removed) deleteTx.run(r.transaction_id!);
       db.prepare("UPDATE items SET cursor = ? WHERE item_id = ?").run(next ?? null, item.item_id);
-      db.exec("COMMIT");
-    } catch (e) { db.exec("ROLLBACK"); throw e; }
+    });
     return { added: added.filter(keep).length, modified: modified.filter(keep).length, removed: removed.length };
   }
 }
@@ -112,7 +109,7 @@ async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, o
 export async function syncItem(item: SyncItem, onProgress: Progress = () => {}): Promise<SyncResult> {
   const institution = (db.prepare("SELECT institution FROM items WHERE item_id = ?").get(item.item_id) as { institution: string } | undefined)?.institution ?? "Unknown";
   const result: SyncResult = { institution, ok: true, accounts: 0, registerAccounts: 0, brokerageAccounts: 0, added: 0, modified: 0, removed: 0, ownersDetected: 0 };
-  const phase = (p: "balances" | "owners" | "transactions", detail: string) => onProgress({ event: "phase", institution, phase: p, detail });
+  const phase = (p: Phase, detail: string) => onProgress({ event: "phase", institution, phase: p, detail });
   onProgress({ event: "item_start", institution });
   try {
     phase("balances", "Fetching accounts and balances…");
@@ -125,9 +122,9 @@ export async function syncItem(item: SyncItem, onProgress: Progress = () => {}):
       Object.assign(result, await syncTransactions(item, registerAccounts, (n) => phase("transactions", `${n} transaction changes fetched…`)));
     }
     db.prepare("UPDATE items SET last_synced = ?, last_error = NULL WHERE item_id = ?").run(new Date().toISOString(), item.item_id);
-  } catch (e: any) {
-    const msg = e?.response?.data?.error_code
-      ? `${e.response.data.error_code}: ${e.response.data.error_message}` : String(e);
+  } catch (e) {
+    const p = plaidError(e);
+    const msg = p?.error_code ? `${p.error_code}: ${p.error_message}` : String(e);
     db.prepare("UPDATE items SET last_error = ? WHERE item_id = ?").run(msg, item.item_id);
     console.error(`sync failed for ${item.item_id}: ${msg}`);
     result.ok = false; result.error = msg;

@@ -25,6 +25,19 @@ export const sum = (accounts) => accounts.reduce((total, a) => total + (a.balanc
 export const ownerList = (accounts) =>
   [...new Set(accounts.map((a) => a.owner))].sort((a, b) => Number(a === "Unassigned") - Number(b === "Unassigned") || cmp(a, b));
 
+/** Accounts split by display group, in the server's group order, each list sorted by name. @returns {[string, any[]][]} */
+export function byGroup(accounts) {
+  const groups = new Map();
+  for (const a of accounts) groups.has(a.group) ? groups.get(a.group).push(a) : groups.set(a.group, [a]);
+  return [...groups].sort(([x, l], [y, m]) => l[0].group_rank - m[0].group_rank || cmp(x, y)).map(([g, l]) => [g, l.sort(byName)]);
+}
+
+/** Group heading suffix: investment-only groups have no transaction register. */
+export const balanceOnly = (list) => list.every((a) => a.kind === "investment") ? " (balance only)" : "";
+
+/** Show an error's message in `el`, or hide `el` when `e` is null. */
+export function showError(el, e) { el.textContent = e ? e.message : ""; el.hidden = !e; }
+
 /** JSON request helper: `json` is sent as the body; a non-2xx response throws with the server's message. */
 export async function api(path, { method = "GET", json } = /** @type {{ method?: string, json?: any }} */ ({})) {
   /** @type {RequestInit} */

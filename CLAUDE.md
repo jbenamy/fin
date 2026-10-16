@@ -6,7 +6,7 @@ built-in `node:sqlite`), plain ES-module browser pages (no framework, no bundler
 ## Commands
 ```
 pnpm dev          # tsx server with .env (Node >= 22.9)
-pnpm test         # node:test: logic, API (temp DB), sync with Plaid stubbed
+pnpm test         # node:test: logic, API (temp DB), auth (software passkey in test/webauthn.ts), sync with Plaid stubbed
 pnpm typecheck    # server (tsconfig.json, strict + noUnused*) AND browser scripts (tsconfig.web.json, non-strict checkJs)
 pnpm build        # tsc -p tsconfig.build.json -> dist/ (tests/types excluded)
 ```
@@ -14,15 +14,16 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 
 ## Architecture
 - `src/app.ts` builds the Express app (`createApp()`, no listen/cron so tests can use it); `src/server.ts` adds the daily cron and listens.
-- `src/routes/`: `link` (Plaid Link token/exchange, SSE sync), `accounts`, `register` (transactions + payee search), `connections` (status, duplicates, rename, unlink).
+- `src/routes/`: `auth` (passkey login, invites, passkey list/remove), `link` (Plaid Link token/exchange, SSE sync), `accounts`, `register` (transactions + payee search), `connections` (status, duplicates, rename, unlink).
+- **Passkey login guard** (`src/auth.ts`, `requireSession`): runs before static files and routers. Only `/healthz`, `/login` + the files it loads (the `PUBLIC` set), and `/api/auth/*` are open; pages redirect to `/login?next=...`, the API answers 401 (and `api()` sends the browser to `/login`). No user accounts: any registered passkey signs in. Sessions are 30-day sliding cookies (`fin_session`, sha256 stored in `sessions`). A new page that the login page needs must be added to `PUBLIC`.
 - `src/sync.ts` per-connection sync: balances (`accountsGet`) -> owners (`identityGet`, once) -> transactions (`transactionsSync`, cash accounts only). Investment accounts never get transactions.
 - **Display rules live on the server.** `src/dto.ts` (`accountDto`) supplies `balance` (credit/loan already negative), `kind` (cash/investment/debt), `group`, `group_rank`. Pages must not re-derive these. `GROUP_ORDER` exists only in `src/classify.ts`.
 - **Effective owner = `account_view.owner`** (manual `owner_override`, else Plaid-detected, else "Unassigned"). Query the view, never re-write the COALESCE.
 - Connection labels (`connectionInfo()` in `routes/connections.ts`) tell apart several logins at one bank: nickname, else all owners on the login, else the item-id tail. `/api/accounts` gives each account its own `connection` label (nickname, else that account's owner) so cards never list everyone on a shared login; the Connections page keeps the login-wide label.
 - `src/plaidStatus.ts` caches `/item/get` for 5 min (`?refresh=1` bypasses; sync/unlink/consent invalidate).
 - `src/db.ts`: tables + `addColumn` migrations (additive only) + the view. DB is `$DATA_DIR/fin.db`.
-- Frontend: `public/*.html` (markup + page CSS), `public/js/` one entry script per page (accounts is split into sidebar/register/link/sync), `public/shared.{js,css}`. Dark theme only.
-- Clean URLs: `/accounts`, `/connections`; `*.html` 301-redirects. Always link to the clean form.
+- Frontend: `public/*.html` (markup + page CSS), `public/js/` one entry script per page (accounts is split into sidebar/register/link/sync; `webauthn.js` is shared by `login` and `passkeys`), `public/shared.{js,css}`. Dark theme only.
+- Clean URLs: `/accounts`, `/connections`, `/passkeys`, `/login`; `*.html` 301-redirects. Always link to the clean form.
 
 ## Conventions
 - Use `api()` from `shared.js` for JSON requests, `store` for localStorage, `openDialog` for modal forms (cancel buttons carry `data-cancel`), `byName`/`cmp` for sorting (case-insensitive, numeric-aware), `usd` for money.
@@ -43,7 +44,8 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 - Verify a deploy by hashing `dist/` and `public/` inside the container (`docker compose exec -T app`, workdir `/app`; no wget/curl in the image) against a fresh local `pnpm build`. The healthcheck takes ~30s to leave "starting".
 
 ## Gotchas
-- There is **no app authentication** (removed deliberately); access control is network-level. Plaid access tokens are stored in plaintext in SQLite.
+- Auth is passkeys (WebAuthn via `@simplewebauthn/server`) on top of network-level access. While **no passkey exists**, anyone who reaches the app can create the first one; after that, new passkeys need a session or a one-time 24 h invite link. Removing the last passkey is refused for that reason. Passkeys are bound to the hostname (RP id): moving to a new host means re-enrolling, and a passkey made on one of several `HOSTNAMES` works only there. Plaid access tokens are stored in plaintext in SQLite.
+- WebAuthn challenges live in memory (5 min); a restart mid-ceremony just means "try again".
 - Daily sync runs in-process: run a single instance.
 - `signedBalance` avoids `-0` (it formats as "-$0.00").
 - TypeScript 7: `baseUrl` is removed; `paths` entries need a leading `./`.

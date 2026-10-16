@@ -32,6 +32,8 @@ export async function api(path, { method = "GET", json } = /** @type {{ method?:
   if (json !== undefined) { init.headers = { "content-type": "application/json" }; init.body = JSON.stringify(json); }
   const res = await fetch(path, init);
   const body = await res.json().catch(() => ({}));
+  // Session gone (expired, signed out elsewhere, passkey removed): back to the login page, then here again.
+  if (res.status === 401 && !path.startsWith("/api/auth/")) location.href = "/login?next=" + encodeURIComponent(location.pathname + location.search + location.hash);
   if (!res.ok) throw new Error(body.error ?? `HTTP ${res.status}`);
   return body;
 }

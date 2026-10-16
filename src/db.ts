@@ -56,3 +56,27 @@ addColumn("accounts", "hidden", "INTEGER NOT NULL DEFAULT 0");
 // One definition of "who owns this account": manual override, else Plaid-detected, else Unassigned.
 db.exec(`CREATE VIEW IF NOT EXISTS account_view AS
   SELECT a.*, COALESCE(a.owner_override, a.owner_detected, 'Unassigned') AS owner FROM accounts a`);
+
+// Passkey login. One shared family dashboard, so there are no user accounts: any registered passkey signs in.
+db.exec(`
+CREATE TABLE IF NOT EXISTS passkeys (
+  id TEXT PRIMARY KEY,            -- credential id (base64url)
+  public_key BLOB NOT NULL,
+  counter INTEGER NOT NULL,
+  transports TEXT,                -- JSON array
+  label TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  last_used TEXT
+);
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash TEXT PRIMARY KEY,    -- sha256 of the cookie value; the raw token is never stored
+  passkey_id TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS invites (
+  token_hash TEXT PRIMARY KEY,    -- one-time link to add a passkey on another device
+  created_at TEXT NOT NULL,
+  expires_at TEXT NOT NULL
+);
+`);

@@ -6,11 +6,14 @@ import { useTempDb } from "./helpers.js";
 useTempDb();
 const { db } = await import("../src/db.js");
 const { createApp } = await import("../src/app.js");
+const { createSession } = await import("../src/auth.js");
 
-let server: Server, base: string;
-const get = async (path: string) => (await fetch(base + path)).json() as Promise<any>;
+let server: Server, base: string, cookie: string;
+// Every request is signed in (the session guard itself is covered in auth.test.ts).
+const fetch = (path: string, init: RequestInit = {}) => globalThis.fetch(base + path, { ...init, headers: { cookie, ...init.headers } });
+const get = async (path: string) => (await fetch(path)).json() as Promise<any>;
 const patch = (path: string, json: unknown) =>
-  fetch(base + path, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(json) });
+  fetch(path, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(json) });
 
 before(async () => {
   db.exec(`INSERT INTO items (item_id, access_token, institution) VALUES ('i1','t','Wells Fargo'),('i2','t','Charles Schwab')`);
@@ -28,6 +31,8 @@ before(async () => {
   tx.run("p3", "joint", "2026-10-03", "AMZN Digital", "Amazon Digital");
   tx.run("p4", "joint", "2026-10-04", "SHELL OIL 12", null);
   tx.run("b1", "brk", "2026-10-05", "should never appear", null); // investment accounts have no register
+  db.exec(`INSERT INTO passkeys (id, public_key, counter, label, created_at) VALUES ('pk', x'00', 0, 'Test', '2026-10-01')`);
+  cookie = "fin_session=" + createSession("pk");
   server = createApp().listen(0);
   base = `http://localhost:${(server.address() as { port: number }).port}`;
 });
@@ -101,14 +106,14 @@ test("groups endpoint lists the display order", async () => {
 });
 
 test("clean URLs: /accounts serves the page; .html addresses redirect and keep the query string", async () => {
-  const page = await fetch(base + "/accounts");
+  const page = await fetch("/accounts");
   assert.equal(page.status, 200);
   assert.match(await page.text(), /<title>Fin · Accounts<\/title>/);
-  const r1 = await fetch(base + "/accounts.html?oauth_state_id=abc", { redirect: "manual" });
+  const r1 = await fetch("/accounts.html?oauth_state_id=abc", { redirect: "manual" });
   assert.equal(r1.status, 301);
   assert.equal(r1.headers.get("location"), "/accounts?oauth_state_id=abc");
-  const r2 = await fetch(base + "/index.html", { redirect: "manual" });
+  const r2 = await fetch("/index.html", { redirect: "manual" });
   assert.equal(r2.headers.get("location"), "/");
-  assert.equal((await fetch(base + "/connections")).status, 200);
-  assert.equal((await fetch(base + "/healthz")).status, 200);
+  assert.equal((await fetch("/connections")).status, 200);
+  assert.equal((await fetch("/healthz")).status, 200);
 });

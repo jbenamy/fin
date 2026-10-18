@@ -41,6 +41,25 @@ Copy `.env.example` to `.env` and fill it in:
 | `HOSTNAMES` | Hostname(s) Caddy serves the app on (compose labels) |
 | `APP_ORIGIN` | Optional. The origin passkeys are bound to (e.g. `https://fin.example.com`); defaults to the address each request arrives on |
 | `DATA_DIR`, `PORT` | Database directory (default `data`, `/data` in the container) and listen port |
+| `OP_TOKEN_FILE` | Compose only: host path of the 1Password service-account token (default `/etc/op/token`) |
+
+### Secrets from 1Password
+In the container, any variable whose value is a 1Password secret reference (`op://vault/item/field`) is replaced at
+startup by `fin-entrypoint.sh`, so `.env` on the server holds references instead of secrets. It reads them with a
+service account that can only read one dedicated vault for the server (one item per app, fields named after the
+variables they replace):
+1. Create a vault for the server (e.g. `my-server`) holding an item `fin` with fields `PLAID_CLIENT_ID` and
+   `PLAID_SECRET` (in the 1Password app, so the secret stays out of shell history).
+2. Create the service account and send its token straight to the server:
+   ```
+   op service-account create my-server --vault my-server:read_items --raw \
+     | ssh <host> 'install -D -m 400 -o 1000 -g 1000 /dev/stdin /etc/op/token'
+   ```
+3. In the server's `.env`, set `PLAID_CLIENT_ID=op://my-server/fin/PLAID_CLIENT_ID` and `PLAID_SECRET=op://my-server/fin/PLAID_SECRET`.
+The token file is owned by uid 1000 because the container runs as `node`. The token is printed only once; if it is
+lost, create a new service account (and delete the old one in 1Password). Startup fails (after a 60 s pause, to stay
+within 1Password's rate limits) if a reference can't be read. Without 1Password, put plain values in `.env` and set
+`OP_TOKEN_FILE=/dev/null`.
 
 ## Run
 ```
@@ -60,6 +79,8 @@ The daily sync runs inside the server process, so run a single instance. **Sync 
   - **First run:** until a passkey exists, whoever opens the app can create one, so do that right after deploying. After that, new passkeys need a signed-in browser or a one-time invite link (valid 24 hours).
   - Passkeys are tied to the hostname. If the app moves to a new host, everyone re-enrolls.
   - The last passkey can't be removed (that would reopen first-run setup).
+- Plaid credentials can live in 1Password instead of `.env` (above). Revoking the service account cuts off the server
+  without rotating the Plaid secret.
 - Keep restricting access at the network layer too (internal hostname, VPN, Twingate, ...).
 - Unlinking a connection revokes it at Plaid (ending billing) and deletes its data here.
 

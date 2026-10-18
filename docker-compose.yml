@@ -4,7 +4,9 @@ services:
   app:
     build: .
     restart: unless-stopped
-    env_file: .env
+    env_file: .env                  # secrets as op:// references, resolved at startup by fin-entrypoint.sh
+    secrets:
+      - op_token                    # 1Password service-account token (read-only access to the host's vault)
     environment:
       TZ: ${TZ:-America/New_York}   # the daily sync cron uses this timezone
     volumes:
@@ -14,6 +16,10 @@ services:
     labels:
       caddy: ${HOSTNAMES:-fin.example.com}
       caddy.reverse_proxy: "{{upstreams 3000}}"
+
+secrets:
+  op_token:
+    file: ${OP_TOKEN_FILE:-/etc/op/token}   # host file owned by uid 1000 (node), mode 400; /dev/null without 1Password
 
 networks:
   apps:

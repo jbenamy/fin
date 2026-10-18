@@ -40,6 +40,10 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 ## Deployment
 - Host `user@your-host.example.com` (placeholder: the repo is public; the real host is the one in `~/.ssh/config`, user root, and is not recorded here), stack dir `/opt/stacks/fin`, compose project `fin`, DB bind-mounted from `/opt/stacks/fin/data` (`/data/fin.db` in the container) so the Kopia stack, which backs up `/opt/stacks`, includes it. Don't move it to a named volume: that silently drops it from backups (happened 2026-10-16 to 10-18). URL `https://fin.example.com` (internal, Twingate-only, via the shared Caddy docker-proxy on the external `apps` network; no published ports).
 - Deploy: rsync the repo (`--delete`, excluding `node_modules data dist .env .git test`), then `docker compose up -d --build` in `/opt/stacks/fin`. `.env` lives only on the VM (mode 600); never copy secrets into the repo.
+- Secrets: `.env` on the VM holds `op://<host vault>/fin/PLAID_...` references (one 1Password vault named after the host,
+  one item per stack, fields named after the env vars); `fin-entrypoint.sh` resolves them with `op read` before
+  exec'ing node, using the read-only service-account token at `/etc/op/token` (uid 1000, mode 400, outside the
+  rsync'd stack dir), mounted as the `op_token` compose secret. Families-plan rate limit is 1,000 requests/day.
 - **Use one multiplexed SSH connection per deploy** (`-o ControlMaster=auto -o ControlPath=/tmp/sa-%C -o ControlPersist=...`). Several rapid separate connections have hung or been dropped. If ssh reports "The agent has no identities", the local SSH key agent needs unlocking; retrying won't help.
 - Verify a deploy by hashing `dist/` and `public/` inside the container (`docker compose exec -T app`, workdir `/app`; no wget/curl in the image) against a fresh local `pnpm build`. The healthcheck takes ~30s to leave "starting".
 

@@ -1,10 +1,32 @@
-import { DatabaseSync } from "node:sqlite";
-import { mkdirSync } from "node:fs";
+import Database from "better-sqlite3-multiple-ciphers";
+import { closeSync, mkdirSync, openSync, readSync } from "node:fs";
 import { join } from "node:path";
+
+/**
+ * Open the database, encrypted (SQLite3MultipleCiphers, ChaCha20) when `key` is given: 64 hex chars (32 bytes).
+ * A plaintext database is encrypted in place the first time it is opened with a key. Without a key (dev, tests)
+ * the file stays plaintext. A wrong or missing key throws SQLITE_NOTADB here (at startup), not on the first query.
+ */
+export function openDb(path: string, key?: string): Database.Database {
+  if (key && !/^[0-9a-f]{64}$/i.test(key)) throw new Error("DB_KEY must be 64 hex characters");
+  const d = new Database(path);
+  if (key) d.pragma(isPlaintext(path) ? `hexrekey='${key}'` : `hexkey='${key}'`);
+  d.prepare("SELECT count(*) FROM sqlite_master").get();
+  return d;
+}
+
+/** True for an existing, non-empty file with the plain SQLite header (an encrypted file's header is random). */
+function isPlaintext(path: string): boolean {
+  const buf = Buffer.alloc(16);
+  let fd: number;
+  try { fd = openSync(path, "r"); } catch { return false; }
+  try { return readSync(fd, buf, 0, 16, 0) === 16 && buf.toString("latin1") === "SQLite format 3\0"; }
+  finally { closeSync(fd); }
+}
 
 const dataDir = process.env.DATA_DIR ?? "data";
 mkdirSync(dataDir, { recursive: true });
-export const db = new DatabaseSync(join(dataDir, "fin.db"));
+export const db = openDb(join(dataDir, "fin.db"), process.env.DB_KEY || undefined);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS items (

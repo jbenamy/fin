@@ -41,6 +41,7 @@ Copy `.env.example` to `.env` and fill it in:
 | `HOSTNAMES` | Hostname(s) Caddy serves the app on (compose labels) |
 | `APP_ORIGIN` | Optional. The origin passkeys are bound to (e.g. `https://fin.example.com`); defaults to the address each request arrives on |
 | `DATA_DIR`, `PORT` | Database directory (default `data`, `/data` in the container) and listen port |
+| `DB_KEY` | Optional. 64 hex chars (`openssl rand -hex 32`): encrypts the database (an existing plaintext one is encrypted in place on the next start). Losing it loses the data |
 | `OP_TOKEN_FILE` | Compose only: host path of the 1Password service-account token (default `/etc/op/token`) |
 
 ### Secrets from 1Password
@@ -74,7 +75,7 @@ so Caddy can route to it from labels. Adjust `docker-compose.yml` if you front i
 The daily sync runs inside the server process, so run a single instance. **Sync now** on the accounts page forces one.
 
 ## Data and security
-- State lives in SQLite at `$DATA_DIR/fin.db` (`./data`, bind-mounted, in compose), including Plaid access tokens. Keep it private and back it up.
+- State lives in SQLite at `$DATA_DIR/fin.db` (`./data`, bind-mounted, in compose), including Plaid access tokens. Set `DB_KEY` to encrypt it at rest (keep the key in 1Password, not next to the database), and back it up.
 - Sign-in is by passkey. There are no user accounts: every passkey on `/passkeys` can see everything.
   - **First run:** until a passkey exists, whoever opens the app can create one, so do that right after deploying. After that, new passkeys need a signed-in browser or a one-time invite link (valid 24 hours).
   - Passkeys are tied to the hostname. If the app moves to a new host, everyone re-enrolls.

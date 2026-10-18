@@ -1,7 +1,7 @@
 # Fin
 
 Read-only family dashboard of bank balances and transactions, backed by Plaid. Node 22.9+/TypeScript server (Express 5,
-built-in `node:sqlite`), plain ES-module browser pages (no framework, no bundler). See `README.md` for user-facing docs.
+SQLite via `better-sqlite3-multiple-ciphers`), plain ES-module browser pages (no framework, no bundler). See `README.md` for user-facing docs.
 
 ## Commands
 ```
@@ -21,7 +21,11 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 - **Effective owner = `account_view.owner`** (manual `owner_override`, else Plaid-detected, else "Unassigned"). Query the view, never re-write the COALESCE.
 - Connection labels (`connectionInfo()` in `routes/connections.ts`) tell apart several logins at one bank: nickname, else all owners on the login, else the item-id tail. `/api/accounts` gives each account its own `connection` label (nickname, else that account's owner) so cards never list everyone on a shared login; the Connections page keeps the login-wide label.
 - `src/plaidStatus.ts` caches `/item/get` for 5 min (`?refresh=1` bypasses; sync/unlink/consent invalidate).
-- `src/db.ts`: tables + `addColumn` migrations (additive only) + the view. DB is `$DATA_DIR/fin.db`.
+- `src/db.ts`: `openDb` + tables + `addColumn` migrations (additive only) + the view. DB is `$DATA_DIR/fin.db`, encrypted
+  (ChaCha20, SQLite3MultipleCiphers) when `DB_KEY` (64 hex chars) is set; a plaintext DB is encrypted in place on the
+  first start with a key, and a wrong/missing key fails at startup. Tests and `pnpm dev` run without a key. The
+  package's `exports` lacks types, hence `src/better-sqlite3-multiple-ciphers.d.ts`; it ships prebuilt binaries, so
+  `allowBuilds` disables its node-gyp script.
 - Frontend: `public/*.html` (markup + page CSS), `public/js/` one entry script per page (accounts is split into sidebar/register/link/sync; `webauthn.js` is shared by `login` and `passkeys`), `public/shared.{js,css}`. Dark theme only.
 - Clean URLs: `/accounts`, `/connections`, `/passkeys`, `/login`; `*.html` 301-redirects. Always link to the clean form.
 
@@ -48,7 +52,7 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 - Verify a deploy by hashing `dist/` and `public/` inside the container (`docker compose exec -T app`, workdir `/app`; no wget/curl in the image) against a fresh local `pnpm build`. The healthcheck takes ~30s to leave "starting".
 
 ## Gotchas
-- Auth is passkeys (WebAuthn via `@simplewebauthn/server`) on top of network-level access. While **no passkey exists**, anyone who reaches the app can create the first one; after that, new passkeys need a session or a one-time 24 h invite link. Removing the last passkey is refused for that reason. Passkeys are bound to the hostname (RP id): moving to a new host means re-enrolling, and a passkey made on one of several `HOSTNAMES` works only there. Plaid access tokens are stored in plaintext in SQLite.
+- Auth is passkeys (WebAuthn via `@simplewebauthn/server`) on top of network-level access. While **no passkey exists**, anyone who reaches the app can create the first one; after that, new passkeys need a session or a one-time 24 h invite link. Removing the last passkey is refused for that reason. Passkeys are bound to the hostname (RP id): moving to a new host means re-enrolling, and a passkey made on one of several `HOSTNAMES` works only there. Plaid access tokens are in SQLite (encrypted at rest when `DB_KEY` is set).
 - WebAuthn challenges live in memory (5 min); a restart mid-ceremony just means "try again".
 - Daily sync runs in-process: run a single instance.
 - `signedBalance` avoids `-0` (it formats as "-$0.00").

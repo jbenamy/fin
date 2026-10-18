@@ -31,10 +31,13 @@ function wireMain(acct) {
 const headline = (a) => `<h1>${esc(a.name)} <button class="ghost sm" id="edit">Edit</button></h1>
   <p class="muted">${esc(a.institution)} · ${esc(a.owner)} · ${esc(a.group)}</p>`;
 
+// Market value of an investment account: the whole page when it is balance-only, above the register otherwise.
+const marketValue = (a, note = "") => `<p style="font-size:28px" class="num">${usd(a.balance)}</p>
+  <p class="muted">Current value as of ${new Date(a.updated_at).toLocaleString()}.${note}</p>`;
+
 function renderInvestment(acct) {
-  $("#content").innerHTML = consentBanner() + headline(acct) + `
-    <p style="font-size:28px" class="num">${usd(acct.balance)}</p>
-    <p class="muted">Current value as of ${new Date(acct.updated_at).toLocaleString()}. Transaction register is not shown for brokerage accounts; turn it on under Edit for a cash management account.</p>`;
+  $("#content").innerHTML = consentBanner() + headline(acct) +
+    marketValue(acct, " Transaction register is not shown for brokerage accounts; turn it on under Edit for a cash management account.");
   wireMain(acct);
 }
 
@@ -46,7 +49,7 @@ async function renderRegister(id, acct, owner) {
     return `<tr class="${t.pending ? "pending" : ""}"><td>${t.date}</td>${acct ? "" : `<td>${esc(names[t.account_id])}</td>`}
       <td>${esc(t.merchant || t.name)}${t.pending ? " (pending)" : ""}</td><td class="muted">${esc((t.category || "").replace(/_/g, " ").toLowerCase())}</td>
       <td class="num ${cls(amt)}">${usd(amt)}</td></tr>`; };
-  $("#content").innerHTML = consentBanner() + (acct ? headline(acct) : `<h1>${esc(owner)}</h1>
+  $("#content").innerHTML = consentBanner() + (acct ? headline(acct) + (acct.kind === "investment" ? marketValue(acct) : "") : `<h1>${esc(owner)}</h1>
       <p class="muted">${plural(accounts.filter((a) => a.owner === owner).length, "account")}</p>`) + `
     <p class="muted">${synced ? "Last synced " + new Date(synced).toLocaleString() : "Not synced yet"}</p>
     ${errs.map((e) => `<p class="err">${esc(e)}</p>`).join("")}

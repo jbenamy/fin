@@ -48,7 +48,9 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
   one item per stack, fields named after the env vars); `fin-entrypoint.sh` resolves them with `op read` before
   exec'ing node, using the read-only service-account token at `/etc/op/token` (uid 1000, mode 400, outside the
   rsync'd stack dir), mounted as the `op_token` compose secret. Families-plan rate limit is 1,000 requests/day.
-- **Use one multiplexed SSH connection per deploy** (`-o ControlMaster=auto -o ControlPath=/tmp/sa-%C -o ControlPersist=...`). Several rapid separate connections have hung or been dropped. If ssh reports "The agent has no identities", the local SSH key agent needs unlocking; retrying won't help.
+- **Use one multiplexed SSH connection per deploy** (`-o ControlMaster=auto -o ControlPath=/tmp/sa-%C -o ControlPersist=...`). Bursts of separate connections used to hang: the home router's IPS flags rapid outbound
+  port-22 SSH as scanning and blocks it for minutes (ping still works). `~/.ssh/config` now routes the host over
+  WireGuard and GitHub over port 443; if SSH hangs again, check the router's blocked flows before the VM. If ssh reports "The agent has no identities", the local SSH key agent needs unlocking; retrying won't help.
 - Verify a deploy by hashing `dist/` and `public/` inside the container (`docker compose exec -T app`, workdir `/app`; no wget/curl in the image) against a fresh local `pnpm build`. The healthcheck takes ~30s to leave "starting".
 
 ## Gotchas

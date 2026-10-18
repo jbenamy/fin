@@ -9,7 +9,7 @@ const tile = (label, value, sub) => `<div class="tile"><div class="label">${labe
 
 function card(a, multi) {
   const where = [a.institution, multi.has(a.institution) && a.connection ? a.connection : null].filter(Boolean).join(" · ") + (a.mask ? ` ··${a.mask}` : "");
-  const note = a.kind === "investment" ? "balance only" : a.kind === "debt" ? "owed" :
+  const note = !a.register ? "balance only" : a.kind === "debt" ? "owed" :
     a.available != null && a.available !== a.balance ? `${usd(a.available)} available` : "";
   return `<a class="card" href="/accounts#${encodeURIComponent(a.account_id)}" aria-label="${esc(a.name)}, ${usd(a.balance)}">
     <div class="name">${esc(a.name)}</div><div class="where">${esc(where)}</div>

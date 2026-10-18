@@ -1,4 +1,4 @@
-import type { RemovedTransaction, Transaction } from "plaid";
+import type { InvestmentTransaction, RemovedTransaction, Transaction } from "plaid";
 import { ownerFromNames } from "./classify.js";
 import { db, transaction } from "./db.js";
 import { invalidatePlaidStatus } from "./plaidStatus.js";
@@ -18,7 +18,7 @@ export type Progress = (e: SyncEvent) => void;
 
 export interface SyncResult {
   institution: string; ok: boolean; error?: string;
-  accounts: number; registerAccounts: number; brokerageAccounts: number;
+  accounts: number; registerAccounts: number; balanceOnlyAccounts: number;
   added: number; modified: number; removed: number; ownersDetected: number;
 }
 
@@ -35,19 +35,30 @@ const upsertTx = db.prepare(`
     merchant=excluded.merchant, category=excluded.category, amount=excluded.amount, pending=excluded.pending`);
 const deleteTx = db.prepare("DELETE FROM transactions WHERE transaction_id = ?");
 
-async function syncBalances(item: SyncItem): Promise<{ registerAccounts: Set<string>; total: number }> {
+interface Registers {
+  /** Accounts whose transactions come from /transactions/sync. */
+  cash: Set<string>;
+  /** Investment accounts with a register (e.g. cash management): their activity comes from /investments/transactions/get. */
+  investment: { account_id: string; inv_tx_synced: string | null }[];
+}
+
+async function syncBalances(item: SyncItem): Promise<{ registers: Registers; total: number }> {
   const { data } = await plaid.accountsGet({ access_token: item.access_token });
   const now = new Date().toISOString();
-  const registerAccounts = new Set<string>();
   for (const a of data.accounts) {
     upsertAccount.run(
       a.account_id, item.item_id, a.official_name ?? a.name, a.mask ?? null, a.type, a.subtype ?? null,
       a.balances.current ?? null, a.balances.available ?? null, a.balances.iso_currency_code ?? "USD", now,
     );
-    // Brokerage (investment) accounts show a balance only; no transaction register.
-    if (a.type !== "investment") registerAccounts.add(a.account_id);
   }
-  return { registerAccounts, total: data.accounts.length };
+  // account_view decides which accounts have a register (most investment accounts show a balance only).
+  // Only accounts Plaid still returns: a closed account left in the database would be rejected in account_ids.
+  const live = new Set(data.accounts.map((a) => a.account_id));
+  const rows = (db.prepare("SELECT account_id, type, inv_tx_synced FROM account_view WHERE item_id = ? AND register = 1")
+    .all(item.item_id) as { account_id: string; type: string; inv_tx_synced: string | null }[]).filter((r) => live.has(r.account_id));
+  const cash = new Set(rows.filter((r) => r.type !== "investment").map((r) => r.account_id));
+  const investment = rows.filter((r) => r.type === "investment");
+  return { registers: { cash, investment }, total: data.accounts.length };
 }
 
 /** Detect account owners via Plaid Identity. Failure here never fails the sync. Stores names only. */
@@ -106,20 +117,70 @@ async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, o
   }
 }
 
+const DAY = 86_400_000;
+const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * Cash activity for investment accounts that have a register. /transactions/sync never covers investment
+ * accounts, so this reads /investments/transactions/get: the full history (Plaid keeps 24 months) the first time,
+ * then the last 30 days so late corrections and cancellations land. The window is replaced as a whole.
+ */
+async function syncInvestmentTransactions(item: SyncItem, accounts: Registers["investment"], onFetched: (n: number) => void) {
+  const now = Date.now(), end = isoDate(now);
+  const start = isoDate(Math.min(...accounts.map((a) => a.inv_tx_synced ? Date.parse(a.inv_tx_synced) - 30 * DAY : now - 730 * DAY)));
+  const ids = accounts.map((a) => a.account_id);
+  const fetched: InvestmentTransaction[] = [];
+  try {
+    for (let total = Infinity; fetched.length < total;) {
+      const { data } = await plaid.investmentsTransactionsGet({
+        access_token: item.access_token, start_date: start, end_date: end,
+        options: { account_ids: ids, count: 500, offset: fetched.length },
+      });
+      fetched.push(...data.investment_transactions);
+      total = data.total_investment_transactions;
+      onFetched(fetched.length);
+      if (data.investment_transactions.length === 0) break;
+    }
+  } catch (e) {
+    // Right after Link the investments data may still be loading; the next sync picks it up.
+    if (plaidError(e)?.error_code === "PRODUCT_NOT_READY") return { added: 0, removed: 0 };
+    throw e;
+  }
+  const inList = ids.map(() => "?").join(",");
+  const before = new Set((db.prepare(`SELECT transaction_id FROM transactions WHERE account_id IN (${inList}) AND date >= ?`)
+    .all(...ids, start) as { transaction_id: string }[]).map((r) => r.transaction_id));
+  transaction(() => {
+    db.prepare(`DELETE FROM transactions WHERE account_id IN (${inList}) AND date >= ?`).run(...ids, start);
+    for (const t of fetched) {
+      // Same sign convention as /transactions/sync: positive = money out. The subtype (deposit, dividend, buy…) is the category.
+      upsertTx.run(t.investment_transaction_id, t.account_id, t.date, t.name, null, t.subtype ?? t.type ?? null, t.amount, 0);
+    }
+    db.prepare(`UPDATE accounts SET inv_tx_synced = ? WHERE account_id IN (${inList})`).run(end, ...ids);
+  });
+  const after = new Set(fetched.map((t) => t.investment_transaction_id));
+  return { added: [...after].filter((id) => !before.has(id)).length, removed: [...before].filter((id) => !after.has(id)).length };
+}
+
 export async function syncItem(item: SyncItem, onProgress: Progress = () => {}): Promise<SyncResult> {
   const institution = (db.prepare("SELECT institution FROM items WHERE item_id = ?").get(item.item_id) as { institution: string } | undefined)?.institution ?? "Unknown";
-  const result: SyncResult = { institution, ok: true, accounts: 0, registerAccounts: 0, brokerageAccounts: 0, added: 0, modified: 0, removed: 0, ownersDetected: 0 };
+  const result: SyncResult = { institution, ok: true, accounts: 0, registerAccounts: 0, balanceOnlyAccounts: 0, added: 0, modified: 0, removed: 0, ownersDetected: 0 };
   const phase = (p: Phase, detail: string) => onProgress({ event: "phase", institution, phase: p, detail });
   onProgress({ event: "item_start", institution });
   try {
     phase("balances", "Fetching accounts and balances…");
-    const { registerAccounts, total } = await syncBalances(item);
-    result.accounts = total; result.registerAccounts = registerAccounts.size; result.brokerageAccounts = total - registerAccounts.size;
+    const { registers, total } = await syncBalances(item);
+    const withRegister = registers.cash.size + registers.investment.length;
+    result.accounts = total; result.registerAccounts = withRegister; result.balanceOnlyAccounts = total - withRegister;
     phase("balances", `${total} account${total === 1 ? "" : "s"} updated`);
     if (!item.identity_status) { phase("owners", "Detecting account owners…"); result.ownersDetected = await syncOwners(item); }
-    if (registerAccounts.size > 0) {
+    if (registers.cash.size > 0) {
       phase("transactions", "Fetching transactions…");
-      Object.assign(result, await syncTransactions(item, registerAccounts, (n) => phase("transactions", `${n} transaction changes fetched…`)));
+      Object.assign(result, await syncTransactions(item, registers.cash, (n) => phase("transactions", `${n} transaction changes fetched…`)));
+    }
+    if (registers.investment.length > 0) {
+      phase("transactions", "Fetching investment account activity…");
+      const inv = await syncInvestmentTransactions(item, registers.investment, (n) => phase("transactions", `${n} investment transactions fetched…`));
+      result.added += inv.added; result.removed += inv.removed;
     }
     db.prepare("UPDATE items SET last_synced = ?, last_error = NULL WHERE item_id = ?").run(new Date().toISOString(), item.item_id);
   } catch (e) {

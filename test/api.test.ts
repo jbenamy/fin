@@ -85,9 +85,20 @@ test("register pages through every row exactly once, in order, even with same-da
   assert.deepEqual(seen, sorted);
 });
 
-test("investment accounts never appear in registers", async () => {
+test("balance-only investment accounts never appear in registers", async () => {
   const rows = (await get("/api/transactions?limit=500&owner=Sam%20Smith")).rows;
   assert.ok(!rows.some((r: any) => r.account_id === "brk"));
+  assert.equal((await get("/api/accounts")).find((a: any) => a.account_id === "brk").register, false);
+});
+
+test("switching on an investment account's register shows its transactions; null goes back to automatic", async () => {
+  assert.equal((await patch("/api/accounts/brk", { register: true })).status, 200);
+  const brk = (await get("/api/accounts")).find((a: any) => a.account_id === "brk");
+  assert.deepEqual([brk.register, brk.register_override, brk.register_auto, brk.kind], [true, true, false, "investment"]);
+  assert.ok((await get("/api/transactions?account=brk")).rows.some((r: any) => r.transaction_id === "b1"));
+  await patch("/api/accounts/brk", { register: null });
+  assert.deepEqual((await get("/api/accounts")).filter((a: any) => a.account_id === "brk").map((a: any) => [a.register, a.register_override]), [[false, null]]);
+  assert.equal((await get("/api/transactions?account=brk")).rows.length, 0);
 });
 
 test("payee search merges case variants, ranks prefix matches first, and treats % literally", async () => {

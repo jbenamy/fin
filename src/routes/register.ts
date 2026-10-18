@@ -5,9 +5,9 @@ import type { TransactionRow } from "../types.js";
 export const register = Router();
 
 // Shared by the register and payee search: which transactions are in scope (an account or an owner; never
-// investment or hidden accounts).
+// hidden accounts or balance-only investment accounts).
 const PAYEE = "COALESCE(NULLIF(t.merchant, ''), t.name)";
-const SCOPE = `a.type != 'investment' AND a.hidden = 0 AND (? = '' OR t.account_id = ?) AND (? = '' OR a.owner = ?)`;
+const SCOPE = `a.register = 1 AND a.hidden = 0 AND (? = '' OR t.account_id = ?) AND (? = '' OR a.owner = ?)`;
 const scopeArgs = (req: Request) => {
   const account = String(req.query.account ?? ""), owner = String(req.query.owner ?? "");
   return [account, account, owner, owner];

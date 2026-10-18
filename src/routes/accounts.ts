@@ -34,12 +34,18 @@ function accountConnectionLabel(a: Row, c: { label: string; nickname: string | n
 // The selectable account groups, in display order.
 accounts.get("/api/groups", (_req, res) => { res.json(GROUP_ORDER); });
 
-// Manual correction of owner / group, or hiding. Send null or "" to clear an owner/group override.
+// Manual correction of owner / group, hiding, or an investment account's register (true/false; null = automatic).
+// Send null or "" to clear an owner/group override.
 accounts.patch("/api/accounts/:id", wrap(async (req, res) => {
   const id = String(req.params.id);
-  const { owner, group, hidden } = req.body ?? {};
-  if (typeof hidden === "boolean") db.prepare("UPDATE accounts SET hidden = ? WHERE account_id = ?").run(hidden ? 1 : 0, id);
-  if (owner !== undefined) db.prepare("UPDATE accounts SET owner_override = ? WHERE account_id = ?").run(cleanLabel(owner, 80), id);
-  if (group !== undefined) db.prepare("UPDATE accounts SET group_override = ? WHERE account_id = ?").run(cleanLabel(group, 80), id);
+  const { owner, group, hidden, register } = req.body ?? {};
+  const set = (column: string, value: string | number | null) => db.prepare(`UPDATE accounts SET ${column} = ? WHERE account_id = ?`).run(value, id);
+  if (typeof hidden === "boolean") set("hidden", hidden ? 1 : 0);
+  if (owner !== undefined) set("owner_override", cleanLabel(owner, 80));
+  if (group !== undefined) set("group_override", cleanLabel(group, 80));
+  if (register === null || typeof register === "boolean") {
+    set("register_override", register == null ? null : register ? 1 : 0);
+    set("inv_tx_synced", null);   // the next sync re-reads the full history instead of leaving a gap
+  }
   res.json({ ok: true });
 }));

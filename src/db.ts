@@ -81,10 +81,20 @@ addColumn("items", "identity_status", "TEXT");
 addColumn("items", "nickname", "TEXT");
 addColumn("items", "created_at", "TEXT");
 addColumn("accounts", "hidden", "INTEGER NOT NULL DEFAULT 0");
+// Investment accounts only: null = automatic | 1 = show a register | 0 = balance only.
+addColumn("accounts", "register_override", "INTEGER");
+// Date (YYYY-MM-DD) of the last /investments/transactions/get for an investment account with a register.
+addColumn("accounts", "inv_tx_synced", "TEXT");
 
 // One definition of "who owns this account": manual override, else Plaid-detected, else Unassigned.
-db.exec(`CREATE VIEW IF NOT EXISTS account_view AS
-  SELECT a.*, COALESCE(a.owner_override, a.owner_detected, 'Unassigned') AS owner FROM accounts a`);
+// And of "has a transaction register": every non-investment account has one; an investment account follows its
+// manual override, else `register_auto` (only cash management accounts, which Schwab and others type as investment).
+// Recreated on every start so a changed definition reaches existing databases.
+db.exec(`DROP VIEW IF EXISTS account_view;
+CREATE VIEW account_view AS
+  SELECT v.*, CASE WHEN v.type != 'investment' THEN 1 ELSE COALESCE(v.register_override, v.register_auto) END AS register
+  FROM (SELECT a.*, COALESCE(a.owner_override, a.owner_detected, 'Unassigned') AS owner,
+    (a.type != 'investment' OR lower(COALESCE(a.subtype, '')) = 'cash management') AS register_auto FROM accounts a) v`);
 
 // Passkey login. One shared family dashboard, so there are no user accounts: any registered passkey signs in.
 db.exec(`

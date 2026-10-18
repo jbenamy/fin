@@ -32,8 +32,8 @@ export function byGroup(accounts) {
   return [...groups].sort(([x, l], [y, m]) => l[0].group_rank - m[0].group_rank || cmp(x, y)).map(([g, l]) => [g, l.sort(byName)]);
 }
 
-/** Group heading suffix: investment-only groups have no transaction register. */
-export const balanceOnly = (list) => list.every((a) => a.kind === "investment") ? " (balance only)" : "";
+/** Group heading suffix when no account in the group has a transaction register. */
+export const balanceOnly = (list) => list.every((a) => !a.register) ? " (balance only)" : "";
 
 /** Show an error's message in `el`, or hide `el` when `e` is null. */
 export function showError(el, e) { el.textContent = e ? e.message : ""; el.hidden = !e; }

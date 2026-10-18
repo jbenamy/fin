@@ -1,7 +1,7 @@
 # Fin
 
 A small, read-only dashboard of account balances and transactions across a family's banks, backed by [Plaid](https://plaid.com).
-A daily sync pulls balances and transactions; brokerage and retirement accounts show a current value only (no register).
+A daily sync pulls balances and transactions; brokerage and retirement accounts show a current value only (no register), except cash management accounts (automatic for Plaid's `cash management` subtype, or switched on per account under Edit), whose activity comes from Plaid Investments.
 
 ## Screenshots
 Sample data only.

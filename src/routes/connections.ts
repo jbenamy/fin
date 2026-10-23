@@ -2,7 +2,7 @@ import { Router } from "express";
 import { db, transaction } from "../db.js";
 import { accountDto } from "../dto.js";
 import { findDuplicates, type DupAccount } from "../duplicates.js";
-import { cleanLabel, wrap } from "../http.js";
+import { cleanLabel } from "../http.js";
 import { plaid, plaidError } from "../plaid.js";
 import { getPlaidStatus, invalidatePlaidStatus } from "../plaidStatus.js";
 import type { AccountViewRow, ItemRow } from "../types.js";
@@ -28,10 +28,10 @@ export function connectionInfo() {
 
 // Per-connection health, merged from our DB and Plaid's /item/get (cached ~5 min; ?refresh=1 bypasses).
 // Only Items linked through this app are listed (we can only query Plaid with tokens we hold). Tokens are never returned.
-connections.get("/api/status", wrap(async (req, res) => {
+connections.get("/api/status", async (req, res) => {
   const force = req.query.refresh === "1";
   const items = db.prepare("SELECT * FROM items ORDER BY institution").all() as unknown as ItemRow[];
-  const accounts = db.prepare("SELECT * FROM account_view ORDER BY name").all() as unknown as AccountViewRow[];
+  const accounts = Map.groupBy(db.prepare("SELECT * FROM account_view ORDER BY name").all() as unknown as AccountViewRow[], (a) => a.item_id);
   const txCounts = new Map((db.prepare("SELECT a.item_id, COUNT(*) AS n FROM transactions t JOIN accounts a USING (account_id) GROUP BY a.item_id")
     .all() as unknown as { item_id: string; n: number }[]).map((r) => [r.item_id, r.n]));
   const conn = connectionInfo();
@@ -43,10 +43,10 @@ connections.get("/api/status", wrap(async (req, res) => {
       suffix: c.suffix, created_at: c.created_at, multiple: c.multiple, transaction_count: txCounts.get(i.item_id) ?? 0,
       last_synced: i.last_synced, last_error: i.last_error, identity_status: i.identity_status,
       plaid: p.info, plaid_error: p.error,
-      accounts: accounts.filter((a) => a.item_id === i.item_id).map(accountDto),
+      accounts: (accounts.get(i.item_id) ?? []).map(accountDto),
     };
   })));
-}));
+});
 
 // Same underlying account reachable through more than one linked Item (e.g. spouses with joint accounts).
 connections.get("/api/duplicates", (_req, res) => {
@@ -55,13 +55,13 @@ connections.get("/api/duplicates", (_req, res) => {
   res.json(findDuplicates(rows));
 });
 
-connections.patch("/api/items/:id", wrap(async (req, res) => {
+connections.patch("/api/items/:id", (req, res) => {
   db.prepare("UPDATE items SET nickname = ? WHERE item_id = ?").run(cleanLabel(req.body?.nickname, 60), String(req.params.id));
   res.json({ ok: true });
-}));
+});
 
 // Unlink: revoke the Item at Plaid (ends its billing and access), then delete its data here.
-connections.delete("/api/items/:id", wrap(async (req, res) => {
+connections.delete("/api/items/:id", async (req, res) => {
   const id = String(req.params.id);
   const item = db.prepare("SELECT access_token FROM items WHERE item_id = ?").get(id) as { access_token: string } | undefined;
   if (!item) return void res.status(404).json({ error: "unknown connection" });
@@ -78,4 +78,4 @@ connections.delete("/api/items/:id", wrap(async (req, res) => {
   });
   invalidatePlaidStatus(id);
   res.json({ ok: true });
-}));
+});

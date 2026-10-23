@@ -6,7 +6,7 @@ import { randomBytes } from "node:crypto";
 import { Router, type Request } from "express";
 import { hashToken, newToken, sessionPasskey, signIn, signOut } from "../auth.js";
 import { db } from "../db.js";
-import { cleanLabel, wrap } from "../http.js";
+import { cleanLabel } from "../http.js";
 
 export const auth = Router();
 
@@ -50,13 +50,13 @@ auth.get("/api/auth/status", (req, res) => {
   res.json({ signedIn: !!sessionPasskey(req), setup: passkeyCount() === 0, invite: req.query.invite ? validInvite(req.query.invite) : undefined });
 });
 
-auth.post("/api/auth/login/options", wrap(async (req, res) => {
+auth.post("/api/auth/login/options", async (req, res) => {
   const options = await generateAuthenticationOptions({ rpID: relyingParty(req).rpID, userVerification: "required" });
   remember(options.challenge, { kind: "login" });
   res.json(options);
-}));
+});
 
-auth.post("/api/auth/login/verify", wrap(async (req, res) => {
+auth.post("/api/auth/login/verify", async (req, res) => {
   const response = req.body?.response as AuthenticationResponseJSON;
   const p = take(response);
   if (p?.kind !== "login") { res.status(400).json({ error: "Sign-in expired, try again" }); return; }
@@ -71,12 +71,12 @@ auth.post("/api/auth/login/verify", wrap(async (req, res) => {
   db.prepare("UPDATE passkeys SET counter = ?, last_used = ? WHERE id = ?").run(result.authenticationInfo.newCounter, new Date().toISOString(), row.id);
   signIn(req, res, row.id);
   res.json({ ok: true });
-}));
+});
 
 auth.post("/api/auth/logout", (req, res) => { signOut(req, res); res.json({ ok: true }); });
 
 // ---- registering a passkey: signed in, first-time setup, or via an invite link -------------------------------------
-auth.post("/api/auth/register/options", wrap(async (req, res) => {
+auth.post("/api/auth/register/options", async (req, res) => {
   const via = sessionPasskey(req) ? "session" : passkeyCount() === 0 ? "setup" : validInvite(req.body?.invite) ? "invite" : null;
   if (!via) { res.status(403).json({ error: "Sign in first, or use an invite link from someone who is signed in" }); return; }
   const label = cleanLabel(req.body?.label, 60) ?? "Passkey";
@@ -88,9 +88,9 @@ auth.post("/api/auth/register/options", wrap(async (req, res) => {
   });
   remember(options.challenge, { kind: "register", label, via, invite: via === "invite" ? hashToken(req.body.invite) : undefined });
   res.json(options);
-}));
+});
 
-auth.post("/api/auth/register/verify", wrap(async (req, res) => {
+auth.post("/api/auth/register/verify", async (req, res) => {
   const response = req.body?.response as RegistrationResponseJSON;
   const p = take(response);
   if (p?.kind !== "register") { res.status(400).json({ error: "Registration expired, try again" }); return; }
@@ -106,7 +106,7 @@ auth.post("/api/auth/register/verify", wrap(async (req, res) => {
     .run(c.id, c.publicKey, c.counter, c.transports ? JSON.stringify(c.transports) : null, p.label, new Date().toISOString());
   if (p.via !== "session") signIn(req, res, c.id);
   res.json({ ok: true });
-}));
+});
 
 // ---- managing passkeys (behind the session guard) -----------------------------------------------------------------
 auth.get("/api/passkeys", (req, res) => {

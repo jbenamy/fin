@@ -1,6 +1,7 @@
 import { join } from "node:path";
 import express from "express";
 import { requireSession } from "./auth.js";
+import { jsonErrors } from "./http.js";
 import { accounts } from "./routes/accounts.js";
 import { auth } from "./routes/auth.js";
 import { connections } from "./routes/connections.js";
@@ -25,5 +26,6 @@ export function createApp() {
   app.use(express.static(publicDir, { extensions: ["html"] }));
 
   app.use(auth, link, accounts, connections, register);
+  app.use(jsonErrors);
   return app;
 }

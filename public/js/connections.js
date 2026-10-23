@@ -1,5 +1,5 @@
 // /connections: linked banks grouped by institution, with health, per-account owner and visibility, duplicates, rename and unlink.
-import { $, $$, esc, cmp, plural, usd, byName, ownerList, api, openDialog, showError } from "/shared.js";
+import { $, $$, esc, cmp, plural, usd, byName, groupBy, ownerList, api, openDialog, showError } from "/shared.js";
 
 const STALE_HOURS = 36; // a daily sync should never be older than this
 let items = [];
@@ -25,14 +25,10 @@ function health(i) {
 
 // ---- duplicate accounts -------------------------------------------------------------------------------------------
 function renderDups({ accounts: groups, connections: conns }) {
-  if (!groups.length && !conns.length) {
-    $("#dups").innerHTML = `<div class="card"><div class="head"><h2>Duplicate accounts</h2><span class="pill ok">None found</span></div>
-      <p class="muted" style="margin:8px 0 0;font-size:13px">No account appears through more than one connection.</p></div>`;
-    return;
-  }
-  $("#dups").innerHTML = `<div class="card"><div class="head"><h2>Duplicate accounts</h2><span class="pill warn">${groups.length + conns.length} found</span></div>
-    <p class="muted" style="margin:8px 0 0;font-size:13px">The same real account is reachable through more than one linked connection, for example when two people each link the same joint account.
-    Balances and transactions for these are counted more than once in owner totals and "All transactions".</p>
+  const found = groups.length + conns.length;
+  $("#dups").innerHTML = `<div class="card"><div class="head"><h2>Duplicate accounts</h2><span class="pill ${found ? "warn" : "ok"}">${found ? found + " found" : "None found"}</span></div>
+    <p class="muted" style="margin:8px 0 0;font-size:13px">${found ? `The same real account is reachable through more than one linked connection, for example when two people each link the same joint account.
+    Balances and transactions for these are counted more than once in owner totals and "All transactions".` : "No account appears through more than one connection."}</p>
     ${conns.map((c) => `<div class="err" style="color:var(--warn)">${esc(c.institution)}: ${c.item_ids.length} connections (${c.item_ids.map(short).join(", ")}) cover the same accounts. Each one is a separate Plaid Item, so you're likely paying for both.</div>`).join("")}
     ${groups.length ? `<table><thead><tr><th>Account</th><th>Seen under</th><th class="num">Balance</th><th>Match</th></tr></thead><tbody>
       ${[...groups].sort((x, y) => cmp(x.institution, y.institution) || cmp(x.mask, y.mask)).map((g) => `<tr><td>${esc(g.institution)}<br><span class="muted">${esc(g.subtype || g.type)} ··${esc(g.mask)}</span></td>
@@ -103,9 +99,7 @@ function render() {
   const fetched = items.map((i) => i.plaid?.fetched_at).filter(Boolean).sort()[0];
   $("#sub").textContent = `${plural(items.length, "linked connection")}${fetched ? " · Plaid status as of " + new Date(fetched).toLocaleTimeString() : ""}`;
   const owners = ownerList(items.flatMap((i) => i.accounts)).filter((o) => o !== "Unassigned");
-  const byInstitution = new Map();
-  for (const i of items) (byInstitution.get(i.institution) ?? byInstitution.set(i.institution, []).get(i.institution)).push(i);
-  $("#items").innerHTML = [...byInstitution].sort(([a], [b]) => cmp(a, b)).map(([name, list]) => institution(name, list, owners)).join("")
+  $("#items").innerHTML = [...groupBy(items, (i) => i.institution)].sort(([a], [b]) => cmp(a, b)).map(([name, list]) => institution(name, list, owners)).join("")
     || '<p class="muted">No banks linked yet.</p>';
   for (const b of $$("[data-rename]")) b.onclick = () => rename(items.find((i) => i.item_id === b.dataset.rename));
   for (const b of $$("[data-unlink]")) b.onclick = () => unlink(items.find((i) => i.item_id === b.dataset.unlink));

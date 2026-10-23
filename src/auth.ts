@@ -46,12 +46,13 @@ export function signOut(req: Request, res: Response) {
 export function sessionPasskey(req: Request, res?: Response): string | null {
   const token = cookies(req)[COOKIE];
   if (!token) return null;
-  const row = db.prepare("SELECT passkey_id, expires_at FROM sessions WHERE token_hash = ?").get(hashToken(token)) as
+  const hash = hashToken(token);
+  const row = db.prepare("SELECT passkey_id, expires_at FROM sessions WHERE token_hash = ?").get(hash) as
     { passkey_id: string; expires_at: string } | undefined;
   const now = Date.now();
   if (!row || row.expires_at < iso(now)) return null;
   if (res && new Date(row.expires_at).getTime() - now < SESSION_MS - DAY) {
-    db.prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ?").run(iso(now + SESSION_MS), hashToken(token));
+    db.prepare("UPDATE sessions SET expires_at = ? WHERE token_hash = ?").run(iso(now + SESSION_MS), hash);
     setCookie(req, res, token);
   }
   return row.passkey_id;

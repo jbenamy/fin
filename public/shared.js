@@ -25,11 +25,16 @@ export const sum = (accounts) => accounts.reduce((total, a) => total + (a.balanc
 export const ownerList = (accounts) =>
   [...new Set(accounts.map((a) => a.owner))].sort((a, b) => Number(a === "Unassigned") - Number(b === "Unassigned") || cmp(a, b));
 
+/** `list` split into a Map by `key(item)`, keeping first-seen order (like Map.groupBy, which older Safari lacks). @returns {Map<any, any[]>} */
+export function groupBy(list, key) {
+  const groups = new Map();
+  for (const x of list) { const k = key(x); groups.has(k) ? groups.get(k).push(x) : groups.set(k, [x]); }
+  return groups;
+}
+
 /** Accounts split by display group, in the server's group order, each list sorted by name. @returns {[string, any[]][]} */
 export function byGroup(accounts) {
-  const groups = new Map();
-  for (const a of accounts) groups.has(a.group) ? groups.get(a.group).push(a) : groups.set(a.group, [a]);
-  return [...groups].sort(([x, l], [y, m]) => l[0].group_rank - m[0].group_rank || cmp(x, y)).map(([g, l]) => [g, l.sort(byName)]);
+  return [...groupBy(accounts, (a) => a.group)].sort(([x, l], [y, m]) => l[0].group_rank - m[0].group_rank || cmp(x, y)).map(([g, l]) => [g, l.sort(byName)]);
 }
 
 /** Group heading suffix when no account in the group has a transaction register. */

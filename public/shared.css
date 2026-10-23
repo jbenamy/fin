@@ -8,7 +8,12 @@
 * { box-sizing:border-box }
 body { margin:0; font:14px system-ui,sans-serif; background:var(--bg); color:var(--fg) }
 a { color:var(--accent) }
-.brand { color:inherit; text-decoration:none } .brand:hover { color:var(--accent) }
+.brand { color:inherit; text-decoration:none }
+/* Page header (Connections, Passkeys): small "Fin" link, title and subtitle on the left, actions on the right.
+   Declared before .brand:hover so hovering still turns the link accent-coloured. */
+.top { display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap; margin-bottom:16px } .top .actions { display:flex; gap:8px }
+.top h1 { font-size:18px; margin:0 0 4px } .top .brand { display:block; font-weight:700; font-size:13px; color:var(--muted); margin-bottom:6px }
+.brand:hover { color:var(--accent) }
 .muted { color:var(--muted) } .neg, .err { color:var(--bad) } .err { font-size:12px; word-break:break-word }
 .num { font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right }
 

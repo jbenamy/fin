@@ -2,7 +2,7 @@ import { Router } from "express";
 import { GROUP_ORDER } from "../classify.js";
 import { db } from "../db.js";
 import { accountDto } from "../dto.js";
-import { cleanLabel, wrap } from "../http.js";
+import { cleanLabel } from "../http.js";
 import type { AccountViewRow, ItemRow } from "../types.js";
 import { connectionInfo } from "./connections.js";
 
@@ -36,7 +36,7 @@ accounts.get("/api/groups", (_req, res) => { res.json(GROUP_ORDER); });
 
 // Manual correction of owner / group, hiding, or an investment account's register (true/false; null = automatic).
 // Send null or "" to clear an owner/group override.
-accounts.patch("/api/accounts/:id", wrap(async (req, res) => {
+accounts.patch("/api/accounts/:id", (req, res) => {
   const id = String(req.params.id);
   const { owner, group, hidden, register } = req.body ?? {};
   const set = (column: string, value: string | number | null) => db.prepare(`UPDATE accounts SET ${column} = ? WHERE account_id = ?`).run(value, id);
@@ -48,4 +48,4 @@ accounts.patch("/api/accounts/:id", wrap(async (req, res) => {
     set("inv_tx_synced", null);   // the next sync re-reads the full history instead of leaving a gap
   }
   res.json({ ok: true });
-}));
+});

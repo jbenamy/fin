@@ -12,8 +12,9 @@ async function load() {
   if (!selected && location.hash.length > 1) selected = decodeURIComponent(location.hash.slice(1)); // deep link from the dashboard
   const exists = selected && (selected.startsWith("o:") ? accounts.some((a) => "o:" + a.owner === selected) : accounts.some((a) => a.account_id === selected));
   if (!exists) { const first = ownerList(accounts)[0]; selected = first ? "o:" + first : null; }
+  if (selected) { select(selected); return; } // renders the sidebar too; not awaited, as before
   renderSidebar(accounts, selected, select);
-  if (selected) select(selected); else $("#content").innerHTML = '<p class="muted">No accounts yet. Connect a bank to get started.</p>';
+  $("#content").innerHTML = '<p class="muted">No accounts yet. Connect a bank to get started.</p>';
 }
 
 // Items linked before owner detection existed must grant Identity consent via Link update mode.

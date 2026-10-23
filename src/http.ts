@@ -1,13 +1,17 @@
-import type { RequestHandler } from "express";
+import type { ErrorRequestHandler } from "express";
 import { plaidError } from "./plaid.js";
 
-/** Async route wrapper: log the failure and answer with Plaid's error message (or the exception text) as JSON. */
-export const wrap = (fn: RequestHandler): RequestHandler => (req, res, next) =>
-  Promise.resolve(fn(req, res, next)).catch((e) => {
-    const d = plaidError(e);
-    console.error(d ?? e);
-    res.status(500).json({ error: d?.error_message ?? String(e) });
-  });
+/**
+ * Last middleware: Express 5 forwards thrown errors and rejected async handlers here. The failure is logged; the
+ * JSON answer carries only Plaid's error message or a client error's (e.g. malformed JSON, with its 4xx), never
+ * the text of an unexpected exception.
+ */
+export const jsonErrors: ErrorRequestHandler = (e, _req, res, _next) => {
+  const d = plaidError(e);
+  console.error(d ?? e);
+  if (e?.expose) res.status(e.status).json({ error: e.message });
+  else res.status(500).json({ error: d?.error_message ?? "Internal server error" });
+};
 
 /** Trim a user-supplied label; blank or non-string means "clear" (null). */
 export const cleanLabel = (v: unknown, max: number) => (typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null);

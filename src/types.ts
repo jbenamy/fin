@@ -1,4 +1,4 @@
-// Row shapes for the SQLite tables / views (node:sqlite returns untyped rows).
+// Row shapes for the SQLite tables / views (better-sqlite3 returns untyped rows).
 export interface ItemRow {
   item_id: string; access_token: string; institution: string; cursor: string | null;
   last_synced: string | null; last_error: string | null;

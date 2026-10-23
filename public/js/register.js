@@ -26,7 +26,7 @@ function lazyLoad(id, mySeq, first, row) {
       loaded += page.rows.length; next = page.next; status();
     } catch {
       if (mySeq === seq) sentinel.innerHTML = `Couldn't load more. <a href="#" id="retry">Retry</a>`;
-      $("#retry")?.addEventListener("click", (ev) => { ev.preventDefault(); loading = false; more(); });
+      $("#retry")?.addEventListener("click", (ev) => { ev.preventDefault(); more(); });
       return;
     } finally { loading = false; }
     // Re-observe so a sentinel that is still in view (short page / tall window) triggers the next load.

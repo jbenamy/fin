@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { CountryCode, Products } from "plaid";
 import { db } from "../db.js";
-import { wrap } from "../http.js";
 import { plaid } from "../plaid.js";
 import { invalidatePlaidStatus } from "../plaidStatus.js";
 import { isSyncRunning, syncAll, syncItem } from "../sync.js";
@@ -9,7 +8,7 @@ import type { ItemRow } from "../types.js";
 
 export const link = Router();
 
-link.post("/api/link-token", wrap(async (req, res) => {
+link.post("/api/link-token", async (req, res) => {
   const base = {
     user: { client_user_id: "owner" },
     client_name: "Fin",
@@ -32,19 +31,19 @@ link.post("/api/link-token", wrap(async (req, res) => {
     transactions: { days_requested: 730 },
   });
   res.json({ link_token: data.link_token });
-}));
+});
 
-link.post("/api/exchange", wrap(async (req, res) => {
+link.post("/api/exchange", async (req, res) => {
   const { public_token, institution } = req.body as { public_token: string; institution?: string };
   const { data } = await plaid.itemPublicTokenExchange({ public_token });
   db.prepare("INSERT OR REPLACE INTO items (item_id, access_token, institution, created_at) VALUES (?, ?, ?, ?)")
     .run(data.item_id, data.access_token, institution ?? "Unknown", new Date().toISOString());
   await syncItem({ item_id: data.item_id, access_token: data.access_token, cursor: null, identity_status: null });
   res.json({ ok: true });
-}));
+});
 
 // After update-mode Link: retry owner detection and sync.
-link.post("/api/item-updated", wrap(async (req, res) => {
+link.post("/api/item-updated", async (req, res) => {
   const item = db.prepare("SELECT item_id, access_token, cursor FROM items WHERE item_id = ?").get(String(req.body?.item_id ?? "")) as
     Pick<ItemRow, "item_id" | "access_token" | "cursor"> | undefined;
   if (!item) return void res.status(404).json({ error: "unknown item" });
@@ -52,7 +51,7 @@ link.post("/api/item-updated", wrap(async (req, res) => {
   invalidatePlaidStatus(item.item_id);
   await syncItem({ ...item, identity_status: null });
   res.json({ ok: true });
-}));
+});
 
 // Streams progress as server-sent events (text/event-stream, which Caddy flushes immediately).
 link.post("/api/sync", async (_req, res) => {

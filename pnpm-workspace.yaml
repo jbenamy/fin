@@ -1,3 +1,5 @@
+packages:
+  - web
 allowBuilds:
   better-sqlite3-multiple-ciphers: false  # ships prebuilt binaries (prebuilds/), no node-gyp needed
   esbuild: true

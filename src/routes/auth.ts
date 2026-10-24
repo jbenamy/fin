@@ -124,8 +124,8 @@ auth.delete("/api/passkeys/:id", (req, res) => {
 });
 
 auth.post("/api/passkeys/invite", (req, res) => {
-  const token = newToken(), now = Date.now(), expires = new Date(now + INVITE_HOURS * 3600e3).toISOString();
-  db.prepare("DELETE FROM invites WHERE expires_at < ?").run(new Date(now).toISOString());
-  db.prepare("INSERT INTO invites (token_hash, created_at, expires_at) VALUES (?,?,?)").run(hashToken(token), new Date(now).toISOString(), expires);
+  const token = newToken(), now = new Date(), expires = new Date(now.getTime() + INVITE_HOURS * 3600e3).toISOString();
+  db.prepare("DELETE FROM invites WHERE expires_at < ?").run(now.toISOString());
+  db.prepare("INSERT INTO invites (token_hash, created_at, expires_at) VALUES (?,?,?)").run(hashToken(token), now.toISOString(), expires);
   res.json({ url: `${relyingParty(req).origin}/login?invite=${token}`, expires_at: expires });
 });

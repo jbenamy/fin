@@ -10,11 +10,11 @@ export const accounts = Router();
 
 type Row = AccountViewRow & Pick<ItemRow, "institution" | "last_synced" | "last_error" | "identity_status">;
 
-// Hidden accounts are left out unless ?all=1.
-accounts.get("/api/accounts", (req, res) => {
+// Hidden accounts are left out (the Connections page lists them, from /api/status).
+accounts.get("/api/accounts", (_req, res) => {
   const rows = db.prepare(`
     SELECT a.*, i.institution, i.last_synced, i.last_error, i.identity_status FROM account_view a
-    JOIN items i USING (item_id) WHERE (? = '1' OR a.hidden = 0) ORDER BY i.institution, a.name`).all(String(req.query.all ?? "")) as unknown as Row[];
+    JOIN items i USING (item_id) WHERE a.hidden = 0 ORDER BY i.institution, a.name`).all() as unknown as Row[];
   const conn = connectionInfo();
   res.json(rows.map((a) => ({
     ...accountDto(a),

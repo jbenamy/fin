@@ -40,7 +40,7 @@ connections.get("/api/status", async (req, res) => {
     const c = conn.get(i.item_id)!;
     return {
       item_id: i.item_id, institution: i.institution, label: c.label, nickname: c.nickname, owners: c.owners,
-      suffix: c.suffix, created_at: c.created_at, multiple: c.multiple, transaction_count: txCounts.get(i.item_id) ?? 0,
+      suffix: c.suffix, created_at: c.created_at, transaction_count: txCounts.get(i.item_id) ?? 0,
       last_synced: i.last_synced, last_error: i.last_error, identity_status: i.identity_status,
       plaid: p.info, plaid_error: p.error,
       accounts: (accounts.get(i.item_id) ?? []).map(accountDto),
@@ -72,10 +72,9 @@ connections.delete("/api/items/:id", async (req, res) => {
     if (code !== "ITEM_NOT_FOUND" && code !== "INVALID_ACCESS_TOKEN") throw e;
   }
   transaction(() => {
-    db.prepare("DELETE FROM transactions WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
-    db.prepare("DELETE FROM holdings WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
-    db.prepare("DELETE FROM holding_history WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
-    db.prepare("DELETE FROM balance_history WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
+    for (const table of ["transactions", "holdings", "holding_history", "balance_history"]) {
+      db.prepare(`DELETE FROM ${table} WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)`).run(id);
+    }
     db.prepare("DELETE FROM accounts WHERE item_id = ?").run(id);
     db.prepare("DELETE FROM items WHERE item_id = ?").run(id);
   });

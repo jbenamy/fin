@@ -53,10 +53,11 @@ test("without a session: pages redirect to /login (keeping the address), the API
   assert.equal(home.headers.get("location"), "/login");
   // Plaid's OAuth return lands on /accounts?oauth_state_id=...; it must survive the trip through /login.
   assert.equal((await b.fetch("/accounts?oauth_state_id=abc")).headers.get("location"), "/login?next=%2Faccounts%3Foauth_state_id%3Dabc");
-  for (const path of ["/login", "/shared.js", "/shared.css", "/js/login.js", "/js/webauthn.js", "/favicon.svg", "/healthz"]) {
+  // The login page is the app itself, so its bundle is public; account data only comes from the API.
+  for (const path of ["/login", "/assets/app.js", "/favicon.svg", "/healthz"]) {
     assert.equal((await b.fetch(path)).status, 200, path);
   }
-  assert.equal((await b.fetch("/js/home.js")).status, 302);
+  for (const path of ["/accounts", "/connections", "/passkeys"]) assert.equal((await b.fetch(path)).status, 302, path);
 });
 
 test("first passkey: open setup while none exist, then closed; sign in, replay, logout", async () => {

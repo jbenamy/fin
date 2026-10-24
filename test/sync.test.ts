@@ -9,6 +9,10 @@ const { syncItem } = await import("../src/sync.js");
 const { getPlaidStatus, invalidatePlaidStatus } = await import("../src/plaidStatus.js");
 
 const stub = (name: string, fn: (...a: any[]) => unknown) => { (plaid as any)[name] = async (...a: any[]) => ({ data: await fn(...a) }); };
+/** A Plaid call that fails the way the SDK does: the error body on `response.data`. */
+const plaidFailure = (error_code: string, error_message?: string) => async () => {
+  throw Object.assign(new Error("x"), { response: { data: { error_code, error_message } } });
+};
 // Default: no holdings. Tests that care about holdings replace this stub.
 stub("investmentsHoldingsGet", () => ({ holdings: [], securities: [] }));
 const tx = (id: string, account: string) => ({ transaction_id: id, account_id: account, date: "2026-10-01", name: "x", merchant_name: null, amount: 5, pending: false });
@@ -44,7 +48,7 @@ test("a manual owner override survives later syncs", async () => {
 });
 
 test("a Plaid failure is recorded on the item instead of throwing", async () => {
-  (plaid as any).accountsGet = async () => { throw Object.assign(new Error("x"), { response: { data: { error_code: "ITEM_LOGIN_REQUIRED", error_message: "login required" } } }); };
+  (plaid as any).accountsGet = plaidFailure("ITEM_LOGIN_REQUIRED", "login required");
   const result = await syncItem({ item_id: "i1", access_token: "tok", cursor: null, identity_status: "ok" });
   assert.equal(result.ok, false);
   assert.match(result.error!, /ITEM_LOGIN_REQUIRED/);
@@ -53,7 +57,7 @@ test("a Plaid failure is recorded on the item instead of throwing", async () => 
 
 test("Plaid item status is cached, refreshable, and invalidated", async () => {
   let calls = 0;
-  stub("itemGet", () => { calls++; return { item: { error: null, update_type: "background", consented_products: [] }, status: null }; });
+  stub("itemGet", () => { calls++; return { item: { error: null, consented_products: [] }, status: null }; });
   invalidatePlaidStatus("i9");
   await getPlaidStatus("i9", "tok");
   await getPlaidStatus("i9", "tok");
@@ -63,7 +67,7 @@ test("Plaid item status is cached, refreshable, and invalidated", async () => {
   invalidatePlaidStatus("i9");
   await getPlaidStatus("i9", "tok");
   assert.equal(calls, 3);                       // invalidation drops it
-  (plaid as any).itemGet = async () => { throw Object.assign(new Error("x"), { response: { data: { error_code: "RATE_LIMIT" } } }); };
+  (plaid as any).itemGet = plaidFailure("RATE_LIMIT");
   invalidatePlaidStatus("i9");
   const failed = await getPlaidStatus("i9", "tok");
   assert.deepEqual([failed.info, failed.error], [null, "RATE_LIMIT"]);
@@ -117,12 +121,10 @@ test("a brokerage account switched on manually gets a register; PRODUCT_NOT_READ
   assert.deepEqual(seen, [["brk2"]]);
   assert.deepEqual([r.registerAccounts, r.balanceOnlyAccounts], [1, 1]);
 
-  (plaid as any).investmentsTransactionsGet = async () => { throw Object.assign(new Error("x"), { response: { data: { error_code: "PRODUCT_NOT_READY" } } }); };
+  (plaid as any).investmentsTransactionsGet = plaidFailure("PRODUCT_NOT_READY");
   const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null, identity_status: "ok" });
   assert.equal(r2.ok, true);
 });
-
-const plaidFailure = (code: string) => async () => { throw Object.assign(new Error("x"), { response: { data: { error_code: code } } }); };
 
 test("holdings: stored per account with the fresher price, lots added up, snapshots recorded, kept when unavailable", async () => {
   db.exec(`INSERT INTO items (item_id, access_token, institution) VALUES ('i3','tok3','Fidelity')`);

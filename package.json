@@ -4,9 +4,10 @@
   "type": "module",
   "scripts": {
     "dev": "tsx --env-file-if-exists=.env src/server.ts",
-    "build": "tsc -p tsconfig.build.json",
+    "dev:web": "pnpm -C web dev",
+    "build": "pnpm -C web build && tsc -p tsconfig.build.json",
     "start": "node --env-file-if-exists=.env dist/server.js",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.web.json",
+    "typecheck": "tsc --noEmit && pnpm -C web check",
     "test": "node --import tsx --test test/*.test.ts"
   },
   "dependencies": {

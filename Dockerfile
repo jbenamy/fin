@@ -4,10 +4,13 @@ FROM node:24.22.1-slim AS build
 WORKDIR /app
 RUN corepack enable
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY web/package.json ./web/
 RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
-RUN pnpm build && pnpm prune --prod
+COPY web ./web
+# dist/ = the server (tsc) + dist/web, the Svelte app (Vite)
+RUN pnpm build && CI=true pnpm prune --prod
 
 FROM node:24.22.1-slim
 ENV NODE_ENV=production DATA_DIR=/data PORT=3000
@@ -15,7 +18,6 @@ WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
-COPY public ./public
 # 1Password CLI for fin-entrypoint.sh; op (Go) needs the CA bundle that node:slim leaves out
 COPY --from=op /usr/local/bin/op /usr/local/bin/op
 COPY --from=op /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt

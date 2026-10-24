@@ -58,12 +58,13 @@ export function sessionPasskey(req: Request, res?: Response): string | null {
   return row.passkey_id;
 }
 
-// Reachable without a session: the login page and what it loads, plus the auth API itself.
-const PUBLIC = new Set(["/login", "/shared.css", "/shared.js", "/js/login.js", "/js/webauthn.js", "/favicon.svg", "/favicon.ico", "/apple-touch-icon.png"]);
+// Reachable without a session: the login page, the app's static files (one bundle for every page; no data in it),
+// and the auth API itself. Account data only ever comes from /api, which stays behind the session.
+const PUBLIC = new Set(["/login", "/favicon.svg", "/favicon.ico", "/apple-touch-icon.png"]);
 
 /** Everything else needs a session: pages redirect to /login (keeping the address), the API answers 401. */
 export const requireSession: RequestHandler = (req, res, next) => {
-  if (PUBLIC.has(req.path) || req.path.startsWith("/api/auth/")) return next();
+  if (PUBLIC.has(req.path) || req.path.startsWith("/assets/") || req.path.startsWith("/api/auth/")) return next();
   if (sessionPasskey(req, res)) return next();
   if (req.path.startsWith("/api/") || req.method !== "GET") { res.status(401).json({ error: "Sign in required" }); return; }
   res.redirect(302, "/login" + (req.originalUrl === "/" ? "" : "?next=" + encodeURIComponent(req.originalUrl)));

@@ -36,6 +36,11 @@ const upsertTx = db.prepare(`
 const deleteTx = db.prepare("DELETE FROM transactions WHERE transaction_id = ?");
 const snapshotBalance = db.prepare("INSERT OR REPLACE INTO balance_history (account_id, date, balance) VALUES (?, ?, ?)");
 
+const DAY = 86_400_000;
+/** "?,?,?" for an SQL IN list of `ids`. */
+const placeholders = (ids: string[]) => ids.map(() => "?").join(",");
+const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
 interface Registers {
   /** Accounts whose transactions come from /transactions/sync. */
   cash: Set<string>;
@@ -45,7 +50,7 @@ interface Registers {
 
 async function syncBalances(item: SyncItem): Promise<{ registers: Registers; investmentAccounts: string[]; total: number }> {
   const { data } = await plaid.accountsGet({ access_token: item.access_token });
-  const now = new Date().toISOString(), today = now.slice(0, 10);
+  const now = new Date().toISOString(), today = isoDate(Date.now());
   transaction(() => {
     for (const a of data.accounts) {
       upsertAccount.run(
@@ -122,9 +127,6 @@ async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, o
   }
 }
 
-const DAY = 86_400_000;
-const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-
 /**
  * Cash activity for investment accounts that have a register. /transactions/sync never covers investment
  * accounts, so this reads /investments/transactions/get: the full history (Plaid keeps 24 months) the first time,
@@ -151,7 +153,7 @@ async function syncInvestmentTransactions(item: SyncItem, accounts: Registers["i
     if (plaidError(e)?.error_code === "PRODUCT_NOT_READY") return { added: 0, removed: 0 };
     throw e;
   }
-  const inList = ids.map(() => "?").join(",");
+  const inList = placeholders(ids);
   const before = new Set((db.prepare(`SELECT transaction_id FROM transactions WHERE account_id IN (${inList}) AND date >= ?`)
     .all(...ids, start) as { transaction_id: string }[]).map((r) => r.transaction_id));
   transaction(() => {
@@ -172,12 +174,13 @@ const HOLDINGS_UNAVAILABLE = new Set([
   "PRODUCT_NOT_READY", "PRODUCTS_NOT_SUPPORTED", "NO_INVESTMENT_ACCOUNTS", "ADDITIONAL_CONSENT_REQUIRED", "INVALID_PRODUCT", "CONSENT_NOT_GRANTED",
 ]);
 
+const isCash = (s: Security | undefined) => !!s?.is_cash_equivalent || s?.type === "cash";
+
 /** Price and value of a position: the broker's, unless the security's market close is more recent (cash is always the broker's). */
 function pricing(h: Holding, s: Security | undefined) {
   const brokerAsOf = h.institution_price_as_of ?? h.institution_price_datetime?.slice(0, 10) ?? null;
   const close = s?.close_price, closeAsOf = s?.close_price_as_of ?? null;
-  const cash = !!s?.is_cash_equivalent || s?.type === "cash";
-  if (!cash && close != null && closeAsOf && (!brokerAsOf || closeAsOf > brokerAsOf)) {
+  if (!isCash(s) && close != null && closeAsOf && (!brokerAsOf || closeAsOf > brokerAsOf)) {
     return { price: close, asOf: closeAsOf, value: h.quantity * close };
   }
   return { price: h.institution_price, asOf: brokerAsOf, value: h.institution_value };
@@ -197,7 +200,7 @@ async function syncHoldings(item: SyncItem, accountIds: string[]): Promise<numbe
     throw e;
   }
   const byId = new Map(securities.map((s) => [s.security_id, s]));
-  const today = isoDate(Date.now()), inList = accountIds.map(() => "?").join(",");
+  const today = isoDate(Date.now()), inList = placeholders(accountIds);
   // A security can appear twice in one account (e.g. separate lots): add them up. Unknown cost basis stays unknown.
   const upsert = db.prepare(`
     INSERT INTO holdings (account_id, security_id, name, ticker, security_type, sector, is_cash, quantity, price, price_as_of, value, cost_basis, vested_value, currency)
@@ -211,7 +214,7 @@ async function syncHoldings(item: SyncItem, accountIds: string[]): Promise<numbe
       const s = byId.get(h.security_id), p = pricing(h, s);
       upsert.run(
         h.account_id, h.security_id, s?.name ?? null, s?.ticker_symbol ?? null, s?.type ?? null, s?.sector ?? null,
-        s?.is_cash_equivalent || s?.type === "cash" ? 1 : 0, h.quantity, p.price, p.asOf, p.value, h.cost_basis ?? null,
+        isCash(s) ? 1 : 0, h.quantity, p.price, p.asOf, p.value, h.cost_basis ?? null,
         h.vested_value ?? null, h.iso_currency_code ?? "USD",
       );
     }

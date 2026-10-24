@@ -6,9 +6,9 @@ A daily sync pulls balances and transactions; brokerage and retirement accounts 
 ## Screenshots
 Sample data only.
 
-**Dashboard**
+**Overview**
 
-![Dashboard](docs/screenshots/dashboard.png)
+![Overview](docs/screenshots/dashboard.png)
 
 **Accounts**
 
@@ -19,10 +19,12 @@ Sample data only.
 ![Connections](docs/screenshots/connections.png)
 
 ## Pages
+Every signed-in page shares one frame: a sidebar with the pages, **Connect bank**, **Sync now** and sign out (a top bar and bottom tabs on phones).
+
 | URL | What it shows |
 |---|---|
-| `/` | Dashboard: net worth, cash / investments / owed, and a card per account grouped by owner |
-| `/accounts` | Sidebar of owners → account types → accounts, with a searchable, lazily-loaded transaction register |
+| `/` | Overview: net worth, cash / investments / owed, and a card per account grouped by owner and type |
+| `/accounts` | Account list (owners → account types → accounts) beside the selected account: balance, holdings and allocation for investment accounts, and a searchable, lazily-loaded transaction register |
 | `/connections` | Linked banks grouped by institution: health, last sync, per-account owner and show/hide, duplicate detection, rename and unlink |
 | `/passkeys` | The passkeys that can sign in: add one on this device, make a one-time invite link for another device, remove one, sign out |
 | `/login` | Sign in with a passkey (or create the first one) |
@@ -65,14 +67,15 @@ within 1Password's rate limits) if a reference can't be read. Without 1Password,
 ## Run
 ```
 docker compose up -d --build     # the app listens on 3000 inside the container
-pnpm install && pnpm dev         # local development (Node >= 22.9)
+pnpm install && pnpm build       # build the web app into dist/web (the server serves it)
+pnpm dev                         # local server (Node >= 22.9); pnpm dev:web alongside it for live reload on :5173
 pnpm test                        # unit + API tests
 pnpm typecheck
 ```
 The compose file follows a Caddy-docker-proxy pattern: no published ports, and the container joins the external `apps` network
 so Caddy can route to it from labels. Adjust `docker-compose.yml` if you front it differently.
 
-The daily sync runs inside the server process, so run a single instance. **Sync now** on the accounts page forces one.
+The daily sync runs inside the server process, so run a single instance. **Sync now** in the sidebar forces one.
 
 ## Data and security
 - State lives in SQLite at `$DATA_DIR/fin.db` (`./data`, bind-mounted, in compose), including Plaid access tokens. Set `DB_KEY` to encrypt it at rest (keep the key in 1Password, not next to the database), and back it up.
@@ -87,16 +90,18 @@ The daily sync runs inside the server process, so run a single instance. **Sync 
 
 ## Layout
 ```
-src/app.ts            Express app: clean URLs, static files, routers
+src/app.ts            Express app: serves the web app for each page address, static files, routers
 src/auth.ts           Sessions and the login guard in front of every page and API
-src/routes/           auth (passkeys), link (Plaid Link + sync), accounts, register (transactions/payees), connections
-src/sync.ts           Per-connection sync: balances, owners, transactions
+src/routes/           auth (passkeys), link (Plaid Link + sync), accounts, register (transactions/payees), holdings, connections
+src/sync.ts           Per-connection sync: balances, owners, transactions, holdings, daily snapshots
 src/classify.ts       Account grouping, owner-name normalization, signed balances
 src/duplicates.ts     Same account seen through several connections
 src/plaidStatus.ts    Cached /item/get status for the Connections page
-public/*.html         The pages (markup and page-specific CSS)
-public/js/            One script per page; accounts is split into sidebar, register, link and sync modules
-public/shared.js/css  Helpers, dark theme, buttons and dialogs used by every page
+web/                  The browser app: Svelte 5 + Vite, its own pnpm workspace package (built into dist/web)
+web/src/pages/        One component per page (Overview, Accounts, Connections, Passkeys, Login)
+web/src/components/   The app frame (sidebar / phone tabs), page header, dialogs, pills, avatars; accounts/ has the
+                      account list, transaction register and holdings
+web/src/lib/          API client, client-side router, shared account data, sync and Plaid Link state, formatting
 test/                 node:test suites (pure logic, API, passkey auth with a software authenticator, sync with Plaid stubbed)
 ```
-`pnpm typecheck` checks both the server (`tsconfig.json`) and the browser scripts (`tsconfig.web.json`, non-strict).
+`pnpm typecheck` checks the server (`tsconfig.json`, TypeScript 7) and the web app (`svelte-check`, which needs TypeScript 6, so `web/` pins its own).

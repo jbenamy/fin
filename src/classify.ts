@@ -54,7 +54,7 @@ export function assetClass(securityType: string | null, isCash: boolean): string
   }
 }
 
-const SUFFIXES =new Set(["jr", "sr", "ii", "iii", "iv"]);
+const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
 const ORG = /\b(llc|inc|corp|trust|ltd|lp|estate|foundation|company|co)\b/i;
 const titleCase = (s: string) => s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 

@@ -20,7 +20,7 @@ holdings.get("/api/holdings", (req, res) => {
   const positions = rows.map((h) => {
     const gain = h.cost_basis == null ? null : h.value - h.cost_basis;
     return {
-      name: h.name, ticker: h.ticker, class: assetClass(h.security_type, !!h.is_cash), sector: h.sector,
+      name: h.name, ticker: h.ticker, class: assetClass(h.security_type, !!h.is_cash),
       quantity: h.quantity, price: h.price, price_as_of: h.price_as_of, stale: !!h.price_as_of && h.price_as_of < staleBefore,
       value: h.value, pct: pct(h.value), cost_basis: h.cost_basis, gain, gain_pct: gain != null && h.cost_basis ? gain / Math.abs(h.cost_basis) : null,
       vested_value: h.vested_value, currency: h.currency ?? "USD",
@@ -28,6 +28,9 @@ holdings.get("/api/holdings", (req, res) => {
   });
   const byClass = new Map<string, number>();
   for (const p of positions) byClass.set(p.class, (byClass.get(p.class) ?? 0) + p.value);
-  const allocation = ASSET_CLASSES.filter((c) => byClass.has(c)).map((c) => ({ class: c, slot: ASSET_CLASSES.indexOf(c), value: byClass.get(c)!, pct: pct(byClass.get(c)!) }));
-  res.json({ synced, total, holdings: positions, allocation });
+  const allocation = ASSET_CLASSES.flatMap((c, slot) => {
+    const value = byClass.get(c);
+    return value === undefined ? [] : [{ class: c, slot, value, pct: pct(value) }];
+  });
+  res.json({ synced, holdings: positions, allocation });
 });

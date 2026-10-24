@@ -1,27 +1,28 @@
 # Fin
 
 Read-only family dashboard of bank balances and transactions, backed by Plaid. Node 22.9+/TypeScript server (Express 5,
-SQLite via `better-sqlite3-multiple-ciphers`), plain ES-module browser pages (no framework, no bundler). See `README.md` for user-facing docs.
+SQLite via `better-sqlite3-multiple-ciphers`), a Svelte 5 + Vite single-page app in `web/` (its own pnpm workspace package). See `README.md` for user-facing docs.
 
 ## Commands
 ```
-pnpm dev          # tsx server with .env (Node >= 22.9)
+pnpm dev          # tsx server with .env (Node >= 22.9); serves the last `pnpm build` of the web app
+pnpm dev:web      # Vite on :5173 with live reload, /api proxied to pnpm dev
 pnpm test         # node:test: logic, API (temp DB), auth (software passkey in test/webauthn.ts), sync with Plaid stubbed
-pnpm typecheck    # server (tsconfig.json, strict + noUnused*) AND browser scripts (tsconfig.web.json, non-strict checkJs)
-pnpm build        # tsc -p tsconfig.build.json -> dist/ (tests/types excluded)
+pnpm typecheck    # server (tsconfig.json, strict + noUnused*) AND web (svelte-check --fail-on-warnings, strict)
+pnpm build        # vite build -> dist/web, then tsc -p tsconfig.build.json -> dist/ (tests excluded)
 ```
 Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.yaml` allow-lists esbuild's build script.
 
 ## Architecture
 - `src/app.ts` builds the Express app (`createApp()`, no listen/cron so tests can use it); `src/server.ts` adds the daily cron and listens.
 - `src/routes/`: `auth` (passkey login, invites, passkey list/remove), `link` (Plaid Link token/exchange, SSE sync), `accounts`, `register` (transactions + payee search), `holdings` (an investment account's positions + allocation), `connections` (status, duplicates, rename, unlink).
-- **Passkey login guard** (`src/auth.ts`, `requireSession`): runs before static files and routers. Only `/healthz`, `/login` + the files it loads (the `PUBLIC` set), and `/api/auth/*` are open; pages redirect to `/login?next=...`, the API answers 401 (and `api()` sends the browser to `/login`). No user accounts: any registered passkey signs in. Sessions are 30-day sliding cookies (`fin_session`, sha256 stored in `sessions`). A new page that the login page needs must be added to `PUBLIC`.
+- **Passkey login guard** (`src/auth.ts`, `requireSession`): runs before static files and routers. Only `/healthz`, `/login`, the favicons (the `PUBLIC` set), `/assets/*` (the app bundle: the login page is the same app, and no data is in it), and `/api/auth/*` are open; pages redirect to `/login?next=...`, the API answers 401 (and `api()` sends the browser to `/login`). No user accounts: any registered passkey signs in. Sessions are 30-day sliding cookies (`fin_session`, sha256 stored in `sessions`). A new page address goes in `PAGES` (`src/app.ts`) and the router table in `web/src/App.svelte`.
 - Route errors: just throw (or reject). Express 5 forwards them to `jsonErrors` (`src/http.ts`, the last middleware), which logs and answers `{ error }` with Plaid's message or a client error's, never an unexpected exception's text; no per-route wrapper.
 - `src/sync.ts` per-connection sync: balances (`accountsGet`) -> owners (`identityGet`, once) -> transactions (`transactionsSync`, non-investment accounts) -> investment activity (`investmentsTransactionsGet`, only investment accounts with a register) -> holdings
   (`investmentsHoldingsGet`, Items with any investment account; replaced per Item; "unavailable" codes keep the old rows).
   Each sync also writes today's (UTC) row to `balance_history` (every account) and `holding_history`: Plaid has no
   history, so these tables are the only source for value-over-time charts. Unlink deletes them too.
-- **Display rules live on the server.** `src/dto.ts` (`accountDto`) supplies `balance` (credit/loan already negative), `kind` (cash/investment/debt), `group`, `group_rank`. Pages must not re-derive these. `GROUP_ORDER` exists only in `src/classify.ts`, as does `ASSET_CLASSES` (allocation classes; the index is the chart color slot `--c<n>` in `accounts.html`).
+- **Display rules live on the server.** `src/dto.ts` (`accountDto`) supplies `balance` (credit/loan already negative), `kind` (cash/investment/debt), `group`, `group_rank`. Pages must not re-derive these. `GROUP_ORDER` exists only in `src/classify.ts`, as does `ASSET_CLASSES` (allocation classes; the index is the chart color slot `--c<n>` in `web/src/components/accounts/Holdings.svelte`).
 - **Effective owner = `account_view.owner`** (manual `owner_override`, else Plaid-detected, else "Unassigned"). Query the view, never re-write the COALESCE.
 - Connection labels (`connectionInfo()` in `routes/connections.ts`) tell apart several logins at one bank: nickname, else all owners on the login, else the item-id tail. `/api/accounts` gives each account its own `connection` label (nickname, else that account's owner) so cards never list everyone on a shared login; the Connections page keeps the login-wide label.
 - `src/plaidStatus.ts` caches `/item/get` for 5 min (`?refresh=1` bypasses; sync/unlink/consent invalidate).
@@ -30,14 +31,15 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
   first start with a key, and a wrong/missing key fails at startup. Tests and `pnpm dev` run without a key. The
   package's `exports` lacks types, hence `src/better-sqlite3-multiple-ciphers.d.ts`; it ships prebuilt binaries, so
   `allowBuilds` disables its node-gyp script.
-- Frontend: `public/*.html` (markup + page CSS), `public/js/` one entry script per page (accounts is split into sidebar/register/link/sync; `webauthn.js` is shared by `login` and `passkeys`), `public/shared.{js,css}`. Dark theme only.
-- Clean URLs: `/accounts`, `/connections`, `/passkeys`, `/login`; `*.html` 301-redirects. Always link to the clean form.
+- Frontend (`web/src`): `App.svelte` routes by path (no router library: `lib/router.svelte.ts`, plain `<a href>` links are intercepted), `/login` renders bare and every other page inside `components/Shell.svelte` (nav rail; top bar + bottom tabs under 820px; global Sync now / Connect bank / sign out). Every page starts with `PageHeader` and uses the same content width (`--page-max`). Shared state in runes modules: `lib/data.svelte.ts` (accounts; `changed()` after any write, `data.version` for pages with their own fetches), `lib/sync.svelte.ts`, `lib/link.svelte.ts` (loads Plaid's script only when Link opens). Tokens and base styles in `app.css`; component styles stay in their `.svelte` file. Icons are `@lucide/svelte`; group icons map in `lib/icons.ts`. Dark theme only.
+- Clean URLs: `/`, `/accounts`, `/connections`, `/passkeys`, `/login` all serve `dist/web/index.html`; `*.html` 301-redirects. Always link to the clean form. The Accounts selection lives in the hash (`/accounts#<account id>` or `#o:<owner>`).
+- `web/` pins TypeScript 6 because `svelte-check` needs TypeScript's JS API, which TypeScript 7 doesn't ship; the server stays on 7. Tests point `WEB_DIR` at a stub build (`test/helpers.ts`).
 
 ## Conventions
-- Use `api()` from `shared.js` for JSON requests, `store` for localStorage, `openDialog` for modal forms (cancel buttons carry `data-cancel`), `byName`/`cmp` for sorting (case-insensitive, numeric-aware), `usd` for money.
-- Escape everything interpolated into HTML with `esc()`.
+- Use `api()` (`lib/api.ts`) for JSON requests, `store` for localStorage, `Dialog.svelte` for modal forms, `byName`/`cmp` for sorting (case-insensitive, numeric-aware), `usd` for money (all in `lib/`). Status shows as `Pill` (icon + word, never color alone).
+- Svelte escapes interpolated text; never use `{@html}` with data.
 - Don't print or log Plaid tokens, secrets, or account owner names/PII in tool output or logs (log request ids and error codes).
-- Keep behavior stable when refactoring; the UI was verified with a headless-Chrome snapshot harness (50 states before/after). It is not in the repo; rebuild a CDP-driven one if you do another large frontend change.
+- Keep behavior stable when refactoring. UI changes were checked by screenshotting every page at 390/900/1440px from a seeded DB with headless Chrome over CDP (Playwright's headless shell is in `~/.cache/ms-playwright`); that harness isn't in the repo. The README screenshots come from the same sample data.
 
 ## Plaid facts
 - Link requests `transactions` (required), `identity` if supported, and `investments` as `additional_consented_products` (consented at Link, billed only from the first `/investments/*` call, so bank-only Items aren't billed for it; Items linked before 2026-10-23 had it in `required_if_supported_products`, which billed Holdings at link). Holdings and Investment Transactions are separate subscriptions. `products` is an intersection filter, so adding required products hides banks. Plaid rejects a token with no product.
@@ -55,7 +57,7 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.ya
 - **Use one multiplexed SSH connection per deploy** (`-o ControlMaster=auto -o ControlPath=/tmp/sa-%C -o ControlPersist=...`). Bursts of separate connections used to hang: the home router's IPS flags rapid outbound
   port-22 SSH as scanning and blocks it for minutes (ping still works). `~/.ssh/config` now routes the host over
   WireGuard and GitHub over port 443; if SSH hangs again, check the router's blocked flows before the VM. If ssh reports "The agent has no identities", the local SSH key agent needs unlocking; retrying won't help.
-- Verify a deploy by hashing `dist/` and `public/` inside the container (`docker compose exec -T app`, workdir `/app`; no wget/curl in the image) against a fresh local `pnpm build`. The healthcheck takes ~30s to leave "starting".
+- Verify a deploy by hashing `dist/` (server + `dist/web`) inside the container (`docker compose exec -T app`, workdir `/app`; no wget/curl in the image) against a fresh local `pnpm build`. The healthcheck takes ~30s to leave "starting".
 
 ## Gotchas
 - Auth is passkeys (WebAuthn via `@simplewebauthn/server`) on top of network-level access. While **no passkey exists**, anyone who reaches the app can create the first one; after that, new passkeys need a session or a one-time 24 h invite link. Removing the last passkey is refused for that reason. Passkeys are bound to the hostname (RP id): moving to a new host means re-enrolling, and a passkey made on one of several `HOSTNAMES` works only there. Plaid access tokens are in SQLite (encrypted at rest when `DB_KEY` is set).

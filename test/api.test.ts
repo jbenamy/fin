@@ -43,7 +43,7 @@ before(async () => {
 });
 after(() => { server.close(); });
 
-test("accounts API: signed balance, kind, group rank; hidden accounts excluded unless ?all=1", async () => {
+test("accounts API: signed balance, kind, group rank; hidden accounts excluded", async () => {
   const rows = await get("/api/accounts");
   const card = rows.find((a: any) => a.account_id === "card");
   assert.equal(card.balance, -250);                 // credit shown as owed
@@ -57,7 +57,7 @@ test("accounts API: signed balance, kind, group rank; hidden accounts excluded u
 
   await patch("/api/accounts/joint", { hidden: true });
   assert.ok(!(await get("/api/accounts")).some((a: any) => a.account_id === "joint"));
-  assert.ok((await get("/api/accounts?all=1")).some((a: any) => a.account_id === "joint"));
+  assert.equal((db.prepare("SELECT hidden FROM accounts WHERE account_id = 'joint'").get() as any).hidden, 1);   // still stored, just not listed
   await patch("/api/accounts/joint", { hidden: false });
 });
 
@@ -121,16 +121,19 @@ test("groups endpoint lists the display order", async () => {
   assert.ok(groups.includes("401(k)"));
 });
 
-test("clean URLs: /accounts serves the page; .html addresses redirect and keep the query string", async () => {
-  const page = await fetch("/accounts");
-  assert.equal(page.status, 200);
-  assert.match(await page.text(), /<title>Fin · Accounts<\/title>/);
+test("clean URLs: every page serves the app; .html addresses redirect and keep the query string; unknown paths 404", async () => {
+  for (const path of ["/", "/accounts", "/connections", "/passkeys"]) {
+    const page = await fetch(path);
+    assert.equal(page.status, 200, path);
+    assert.match(await page.text(), /<title>Fin<\/title>/);
+  }
+  assert.equal((await fetch("/nope")).status, 404);
+  assert.equal((await fetch("/assets/missing.js")).status, 404);
   const r1 = await fetch("/accounts.html?oauth_state_id=abc", { redirect: "manual" });
   assert.equal(r1.status, 301);
   assert.equal(r1.headers.get("location"), "/accounts?oauth_state_id=abc");
   const r2 = await fetch("/index.html", { redirect: "manual" });
   assert.equal(r2.headers.get("location"), "/");
-  assert.equal((await fetch("/connections")).status, 200);
   assert.equal((await fetch("/healthz")).status, 200);
 });
 
@@ -157,7 +160,6 @@ test("errors answer JSON: Plaid's message with 500, malformed JSON with 400, oth
 test("holdings API: positions largest first, gain from cost basis, allocation in fixed class order", async () => {
   const data = await get("/api/holdings?account=brk");
   assert.equal(data.synced, true);
-  assert.equal(data.total, 9000);
   assert.deepEqual(data.holdings.map((h: any) => [h.ticker, h.class, h.pct]), [["VTI", "ETFs", 6000 / 9000], ["AAPL", "Stocks", 2000 / 9000], ["SPAXX", "Cash", 1000 / 9000]]);
   const [vti, aapl] = data.holdings;
   assert.deepEqual([vti.gain, vti.gain_pct, vti.stale], [2000, 0.5, false]);

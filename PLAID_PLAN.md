@@ -9,7 +9,7 @@ dashboard (Fin), using /investments/holdings/get. (workflow_id: wf_45b4e4fe445b3
 
 - Products:
   - transactions (`products`): cash and card activity; daily balances come with /accounts/get (SELECT-001, SELECT-005).
-  - identity (`required_if_supported_products`): account-owner names for grouping by family member (SELECT-004). Unchanged.
+  - identity: removed 2026-10-24 (no longer requested or called); owners are assigned by hand per account.
   - investments (`additional_consented_products`): holdings for brokerage/retirement accounts, plus the existing
     /investments/transactions/get for cash management registers (INV-010, INV-015).
 - Rejected: investments in `required_if_supported_products` (the previous setting): it bills the Holdings
@@ -25,7 +25,6 @@ dashboard (Fin), using /investments/holdings/get. (workflow_id: wf_45b4e4fe445b3
 |------|----------------|-------|-------|
 | Investments enabled for US Production | holdings calls fail without it | https://dashboard.plaid.com/settings/team/products | verified (2026-10-23) |
 | OAuth redirect URI registered | OAuth banks in Link | https://dashboard.plaid.com/developers/api | verified (2026-10-23) |
-| Confirm Identity is enabled for Production: the Dashboard products list shows only investments and transactions | owner detection may be returning errors | https://dashboard.plaid.com/settings/team/products | cannot_verify |
 | Webhooks | not used: a daily cron syncs instead (INV-006 refresh cadence is daily-ish) | n/a | not_applicable |
 
 ## Implementation checklist
@@ -44,7 +43,7 @@ dashboard (Fin), using /investments/holdings/get. (workflow_id: wf_45b4e4fe445b3
 ## Acceptance
 
 - Round 0 (2026-10-23): FAIL on three items, all outside the holdings change:
-  - CHECK-004: no Reconnect (update mode) for ITEM_LOGIN_REQUIRED; update mode is used only for Identity consent.
+  - CHECK-004: no Reconnect (update mode) for ITEM_LOGIN_REQUIRED; update mode is not used (it was only for Identity consent, now removed).
   - CHECK-008: not run against Plaid Sandbox (Plaid stubbed in tests; UI checked on a seeded DB).
   - CHECK-014: freshness comes from the daily cron + Sync now, not HOLDINGS / SYNC_UPDATES_AVAILABLE webhooks.
 

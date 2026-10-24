@@ -8,7 +8,6 @@
     plural(r.accounts, "account"),
     `${r.added} new · ${r.modified} updated · ${r.removed} removed transactions`,
     r.holdings ? plural(r.holdings, "holding") : "",
-    r.ownersDetected ? `${plural(r.ownersDetected, "owner")} detected` : "",
   ].filter(Boolean).join(" · ");
 </script>
 

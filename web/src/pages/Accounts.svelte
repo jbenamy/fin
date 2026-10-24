@@ -1,6 +1,6 @@
 <!-- /accounts: the account list + the selected account's (or owner's) balance, holdings and transactions. -->
 <script lang="ts">
-  import { Pencil, ShieldCheck, Wallet } from "@lucide/svelte";
+  import { Pencil, Wallet } from "@lucide/svelte";
   import AccountList from "../components/accounts/AccountList.svelte";
   import Holdings from "../components/accounts/Holdings.svelte";
   import Register from "../components/accounts/Register.svelte";
@@ -27,8 +27,6 @@
 
   const names = $derived(Object.fromEntries(data.accounts.map((a) => [a.account_id, a.name])));
   const errors = $derived([...new Set(data.accounts.filter((a) => a.last_error).map((a) => a.institution + ": " + a.last_error))]);
-  // Items linked before owner detection existed must grant Identity consent via Link update mode.
-  const needConsent = $derived([...new Map(data.accounts.filter((a) => a.identity_status === "needs_consent").map((a) => [a.item_id, a.institution]))]);
   const mine = $derived(owner ? data.accounts.filter((a) => a.owner === owner) : []);
   const synced = $derived(lastSynced());
 
@@ -61,11 +59,6 @@
   <div class="layout">
     <aside><AccountList accounts={data.accounts} {selected} onselect={select} /></aside>
     <section class="detail">
-      {#each needConsent as [id, name] (id)}
-        <div class="banner card"><ShieldCheck size={18} color="var(--warn)" aria-hidden="true" /><span>Owner detection needs permission for <b>{name}</b>.</span>
-          <button class="sm" onclick={() => startLink(id)}>Enable</button></div>
-      {/each}
-
       {#if acct}
         {@const Icon = groupIcon(acct.group)}
         <header class="dhead">
@@ -129,7 +122,6 @@
 <style>
   .layout { display:grid; grid-template-columns:300px minmax(0, 1fr); gap:24px; align-items:start }
   .detail { display:flex; flex-direction:column; gap:16px; min-width:0 } .detail > p { margin:0 } /* the column gap spaces them */
-  .banner { display:flex; align-items:center; gap:10px; padding:10px 14px } .banner span { flex:1 }
   .dhead { display:flex; align-items:center; gap:14px } .dt { flex:1; min-width:0 }
   .dt h1 { font-size:22px; overflow-wrap:anywhere } .dt p { margin:3px 0 0; font-size:13.5px }
   .balance { display:flex; align-items:flex-end; gap:12px 40px; flex-wrap:wrap; padding:18px 20px }

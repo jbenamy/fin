@@ -8,17 +8,17 @@ import { connectionInfo } from "./connections.js";
 
 export const accounts = Router();
 
-type Row = AccountViewRow & Pick<ItemRow, "institution" | "last_synced" | "last_error" | "identity_status">;
+type Row = AccountViewRow & Pick<ItemRow, "institution" | "last_synced" | "last_error">;
 
 // Hidden accounts are left out (the Connections page lists them, from /api/status).
 accounts.get("/api/accounts", (_req, res) => {
   const rows = db.prepare(`
-    SELECT a.*, i.institution, i.last_synced, i.last_error, i.identity_status FROM account_view a
+    SELECT a.*, i.institution, i.last_synced, i.last_error FROM account_view a
     JOIN items i USING (item_id) WHERE a.hidden = 0 ORDER BY i.institution, a.name`).all() as unknown as Row[];
   const conn = connectionInfo();
   res.json(rows.map((a) => ({
     ...accountDto(a),
-    institution: a.institution, last_synced: a.last_synced, last_error: a.last_error, identity_status: a.identity_status,
+    institution: a.institution, last_synced: a.last_synced, last_error: a.last_error,
     connection: accountConnectionLabel(a, conn.get(a.item_id)), multiple_connections: conn.get(a.item_id)?.multiple ?? false,
   })));
 });

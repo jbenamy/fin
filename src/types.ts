@@ -2,7 +2,7 @@
 export interface ItemRow {
   item_id: string; access_token: string; institution: string; cursor: string | null;
   last_synced: string | null; last_error: string | null;
-  identity_status: string | null; nickname: string | null; created_at: string | null;
+  nickname: string | null; created_at: string | null;
 }
 
 export interface AccountRow {

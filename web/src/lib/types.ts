@@ -8,7 +8,7 @@ export interface Account {
   owner: string; owner_detected: string | null; owner_override: string | null; group_override: string | null;
   register_override: boolean | null; register_auto: boolean;
   balance: number | null; available: number | null; currency: string; updated_at: string | null;
-  institution: string; last_synced: string | null; last_error: string | null; identity_status: string | null;
+  institution: string; last_synced: string | null; last_error: string | null;
   connection: string | null; multiple_connections: boolean;
 }
 
@@ -34,7 +34,7 @@ export interface PlaidStatus {
 }
 export interface Item {
   item_id: string; institution: string; label: string; nickname: string | null; suffix: string; owners: string[];
-  created_at: string | null; last_synced: string | null; last_error: string | null; identity_status: string | null;
+  created_at: string | null; last_synced: string | null; last_error: string | null;
   transaction_count: number; plaid: PlaidStatus | null; plaid_error: string | null; accounts: Account[];
 }
 

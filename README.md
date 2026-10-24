@@ -29,7 +29,7 @@ Every signed-in page shares one frame: a sidebar with the pages, **Connect bank*
 | `/passkeys` | The passkeys that can sign in: add one on this device, make a one-time invite link for another device, remove one, sign out |
 | `/login` | Sign in with a passkey (or create the first one) |
 
-Owners are detected from Plaid Identity (and can be reassigned per account); accounts are grouped by type automatically.
+Owners are assigned per account (Connections page or the account's Edit dialog); accounts are grouped by type automatically.
 Credit cards and loans are shown as negative (owed) so totals add up.
 
 ## Configuration

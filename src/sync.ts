@@ -1,13 +1,12 @@
 import type { Holding, InvestmentTransaction, RemovedTransaction, Security, Transaction } from "plaid";
-import { ownerFromNames } from "./classify.js";
 import { db, transaction } from "./db.js";
 import { invalidatePlaidStatus } from "./plaidStatus.js";
 import { plaid, plaidError } from "./plaid.js";
 import type { ItemRow } from "./types.js";
 
-export type SyncItem = Pick<ItemRow, "item_id" | "access_token" | "cursor" | "identity_status">;
+export type SyncItem = Pick<ItemRow, "item_id" | "access_token" | "cursor">;
 
-type Phase = "balances" | "owners" | "transactions" | "holdings";
+type Phase = "balances" | "transactions" | "holdings";
 export type SyncEvent =
   | { event: "start"; institutions: string[] }
   | { event: "item_start"; institution: string }
@@ -19,7 +18,7 @@ export type Progress = (e: SyncEvent) => void;
 export interface SyncResult {
   institution: string; ok: boolean; error?: string;
   accounts: number; registerAccounts: number; balanceOnlyAccounts: number;
-  added: number; modified: number; removed: number; ownersDetected: number; holdings: number;
+  added: number; modified: number; removed: number; holdings: number;
 }
 
 const upsertAccount = db.prepare(`
@@ -69,28 +68,6 @@ async function syncBalances(item: SyncItem): Promise<{ registers: Registers; inv
   const investment = rows.filter((r) => r.type === "investment");
   const investmentAccounts = data.accounts.filter((a) => a.type === "investment").map((a) => a.account_id);
   return { registers: { cash, investment }, investmentAccounts, total: data.accounts.length };
-}
-
-/** Detect account owners via Plaid Identity. Failure here never fails the sync. Stores names only. */
-async function syncOwners(item: SyncItem): Promise<number> {
-  const setStatus = db.prepare("UPDATE items SET identity_status = ? WHERE item_id = ?");
-  try {
-    const { data } = await plaid.identityGet({ access_token: item.access_token });
-    const setOwner = db.prepare("UPDATE accounts SET owner_detected = ? WHERE account_id = ?");
-    let n = 0;
-    for (const a of data.accounts) {
-      const owner = ownerFromNames(a.owners);
-      if (owner) { setOwner.run(owner, a.account_id); n++; }
-    }
-    setStatus.run("ok", item.item_id);
-    return n;
-  } catch (e) {
-    const code = plaidError(e)?.error_code;
-    if (code === "ADDITIONAL_CONSENT_REQUIRED" || code === "INVALID_PRODUCT") setStatus.run("needs_consent", item.item_id);
-    else if (code === "PRODUCTS_NOT_SUPPORTED") setStatus.run("unsupported", item.item_id);
-    else console.error(`identity lookup failed for ${item.item_id}: ${code ?? "unknown error"}`);
-    return 0;
-  }
 }
 
 async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, onFetched: (n: number) => void) {
@@ -226,7 +203,7 @@ async function syncHoldings(item: SyncItem, accountIds: string[]): Promise<numbe
 
 export async function syncItem(item: SyncItem, onProgress: Progress = () => {}): Promise<SyncResult> {
   const institution = (db.prepare("SELECT institution FROM items WHERE item_id = ?").get(item.item_id) as { institution: string } | undefined)?.institution ?? "Unknown";
-  const result: SyncResult = { institution, ok: true, accounts: 0, registerAccounts: 0, balanceOnlyAccounts: 0, added: 0, modified: 0, removed: 0, ownersDetected: 0, holdings: 0 };
+  const result: SyncResult = { institution, ok: true, accounts: 0, registerAccounts: 0, balanceOnlyAccounts: 0, added: 0, modified: 0, removed: 0, holdings: 0 };
   const phase = (p: Phase, detail: string) => onProgress({ event: "phase", institution, phase: p, detail });
   onProgress({ event: "item_start", institution });
   try {
@@ -235,7 +212,6 @@ export async function syncItem(item: SyncItem, onProgress: Progress = () => {}):
     const withRegister = registers.cash.size + registers.investment.length;
     result.accounts = total; result.registerAccounts = withRegister; result.balanceOnlyAccounts = total - withRegister;
     phase("balances", `${total} account${total === 1 ? "" : "s"} updated`);
-    if (!item.identity_status) { phase("owners", "Detecting account owners…"); result.ownersDetected = await syncOwners(item); }
     if (registers.cash.size > 0) {
       phase("transactions", "Fetching transactions…");
       Object.assign(result, await syncTransactions(item, registers.cash, (n) => phase("transactions", `${n} transaction changes fetched…`)));
@@ -270,7 +246,7 @@ export async function syncAll(onProgress: Progress = () => {}): Promise<SyncResu
   if (running) throw new Error("A sync is already running");
   running = true;
   try {
-    const items = db.prepare("SELECT item_id, access_token, cursor, identity_status, institution FROM items").all() as unknown as (SyncItem & { institution: string })[];
+    const items = db.prepare("SELECT item_id, access_token, cursor, institution FROM items").all() as unknown as (SyncItem & { institution: string })[];
     onProgress({ event: "start", institutions: items.map((i) => i.institution) });
     const results: SyncResult[] = [];
     for (const item of items) results.push(await syncItem(item, onProgress));

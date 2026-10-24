@@ -4,7 +4,7 @@ import { changed } from "./data.svelte";
 
 export interface SyncResult {
   institution: string; ok: boolean; error?: string; accounts: number; registerAccounts: number; balanceOnlyAccounts: number;
-  added: number; modified: number; removed: number; ownersDetected: number; holdings: number;
+  added: number; modified: number; removed: number; holdings: number;
 }
 type Row = { name: string; detail?: string; result?: SyncResult };
 

@@ -41,7 +41,7 @@ connections.get("/api/status", async (req, res) => {
     return {
       item_id: i.item_id, institution: i.institution, label: c.label, nickname: c.nickname, owners: c.owners,
       suffix: c.suffix, created_at: c.created_at, transaction_count: txCounts.get(i.item_id) ?? 0,
-      last_synced: i.last_synced, last_error: i.last_error, identity_status: i.identity_status,
+      last_synced: i.last_synced, last_error: i.last_error,
       plaid: p.info, plaid_error: p.error,
       accounts: (accounts.get(i.item_id) ?? []).map(accountDto),
     };

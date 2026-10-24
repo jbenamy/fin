@@ -17,39 +17,33 @@ const plaidFailure = (error_code: string, error_message?: string) => async () =>
 stub("investmentsHoldingsGet", () => ({ holdings: [], securities: [] }));
 const tx = (id: string, account: string) => ({ transaction_id: id, account_id: account, date: "2026-10-01", name: "x", merchant_name: null, amount: 5, pending: false });
 
-test("sync stores balances and cash transactions, skips brokerage transactions, detects owners", async () => {
+test("sync stores balances and cash transactions, skips brokerage transactions", async () => {
   db.exec(`INSERT INTO items (item_id, access_token, institution) VALUES ('i1','tok','Charles Schwab')`);
   stub("accountsGet", () => ({ accounts: [
     { account_id: "cash", name: "Checking", mask: "1", type: "depository", subtype: "checking", balances: { current: 10, available: 9, iso_currency_code: "USD" } },
     { account_id: "brk", name: "Brokerage", mask: "2", type: "investment", subtype: "brokerage", balances: { current: 500, available: null, iso_currency_code: "USD" } },
   ] }));
-  stub("identityGet", () => ({ accounts: [
-    { account_id: "cash", owners: [{ names: ["ALEX Q SMITH"] }] },
-    { account_id: "brk", owners: [{ names: ["Alex Smith"] }, { names: ["Sam Smith"] }] },
-  ] }));
   stub("transactionsSync", () => ({ added: [tx("t1", "cash"), tx("t2", "brk")], modified: [], removed: [], has_more: false, next_cursor: "c1" }));
 
-  const result = await syncItem({ item_id: "i1", access_token: "tok", cursor: null, identity_status: null });
+  const result = await syncItem({ item_id: "i1", access_token: "tok", cursor: null });
 
   assert.equal(result.ok, true);
   assert.deepEqual([result.accounts, result.registerAccounts, result.balanceOnlyAccounts], [2, 1, 1]);
   assert.deepEqual([result.added, result.modified, result.removed], [1, 0, 0]);   // the brokerage transaction is not counted
   assert.deepEqual(db.prepare("SELECT transaction_id FROM transactions").all().map((r: any) => r.transaction_id), ["t1"]);
-  const owners = Object.fromEntries(db.prepare("SELECT account_id, owner FROM account_view").all().map((r: any) => [r.account_id, r.owner]));
-  assert.deepEqual(owners, { cash: "Alex Smith", brk: "Alex Smith & Sam Smith" });
-  const item = db.prepare("SELECT cursor, identity_status, last_error FROM items").get() as any;
-  assert.deepEqual([item.cursor, item.identity_status, item.last_error], ["c1", "ok", null]);
+  const item = db.prepare("SELECT cursor, last_error FROM items").get() as any;
+  assert.deepEqual([item.cursor, item.last_error], ["c1", null]);
 });
 
 test("a manual owner override survives later syncs", async () => {
   db.prepare("UPDATE accounts SET owner_override = 'Someone Else' WHERE account_id = 'cash'").run();
-  await syncItem({ item_id: "i1", access_token: "tok", cursor: "c1", identity_status: "ok" });
+  await syncItem({ item_id: "i1", access_token: "tok", cursor: "c1" });
   assert.equal((db.prepare("SELECT owner FROM account_view WHERE account_id = 'cash'").get() as any).owner, "Someone Else");
 });
 
 test("a Plaid failure is recorded on the item instead of throwing", async () => {
   (plaid as any).accountsGet = plaidFailure("ITEM_LOGIN_REQUIRED", "login required");
-  const result = await syncItem({ item_id: "i1", access_token: "tok", cursor: null, identity_status: "ok" });
+  const result = await syncItem({ item_id: "i1", access_token: "tok", cursor: null });
   assert.equal(result.ok, false);
   assert.match(result.error!, /ITEM_LOGIN_REQUIRED/);
   assert.match((db.prepare("SELECT last_error FROM items").get() as any).last_error, /ITEM_LOGIN_REQUIRED/);
@@ -91,7 +85,7 @@ test("cash management accounts get a register from Investments; plain brokerage 
     return { investment_transactions: page, total_investment_transactions: 3 };
   });
 
-  const r1 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null, identity_status: "ok" });
+  const r1 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.equal(r1.ok, true);
   assert.deepEqual([r1.registerAccounts, r1.balanceOnlyAccounts, r1.added], [1, 1, 3]);
   assert.deepEqual(calls.map((c) => [c.options.account_ids, c.options.offset]), [[["cma"], 0], [["cma"], 2]]);
@@ -105,7 +99,7 @@ test("cash management accounts get a register from Investments; plain brokerage 
   db.prepare("UPDATE transactions SET date = ? WHERE transaction_id IN ('v1','v2','v3')").run(synced);
   pages = [[invTx("v1", "cma", synced)], []];
   stub("investmentsTransactionsGet", (req: any) => { calls.push(req); return { investment_transactions: pages[0], total_investment_transactions: 1 }; });
-  const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null, identity_status: "ok" });
+  const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.deepEqual([r2.added, r2.removed], [0, 2]);
   assert.equal(calls[0].start_date, new Date(Date.parse(synced) - 30 * 86_400_000).toISOString().slice(0, 10));
   assert.deepEqual(db.prepare("SELECT transaction_id FROM transactions WHERE account_id = 'cma'").all().map((r: any) => r.transaction_id), ["v1"]);
@@ -116,13 +110,13 @@ test("a brokerage account switched on manually gets a register; PRODUCT_NOT_READ
   db.prepare("UPDATE accounts SET register_override = 0 WHERE account_id = 'cma'").run();
   const seen: string[][] = [];
   stub("investmentsTransactionsGet", (req: any) => { seen.push(req.options.account_ids); return { investment_transactions: [invTx("v9", "brk2")], total_investment_transactions: 1 }; });
-  const r = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null, identity_status: "ok" });
+  const r = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.equal(r.ok, true);
   assert.deepEqual(seen, [["brk2"]]);
   assert.deepEqual([r.registerAccounts, r.balanceOnlyAccounts], [1, 1]);
 
   (plaid as any).investmentsTransactionsGet = plaidFailure("PRODUCT_NOT_READY");
-  const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null, identity_status: "ok" });
+  const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.equal(r2.ok, true);
 });
 
@@ -141,7 +135,7 @@ test("holdings: stored per account with the fresher price, lots added up, snapsh
       { security_id: "old", name: "Old Fund", ticker_symbol: null, type: "mutual fund", close_price: 55, close_price_as_of: "2026-10-21" },
     ],
   }));
-  const r = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null, identity_status: "ok" });
+  const r = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null });
   assert.equal(r.ok, true);
   assert.equal(r.holdings, 4);
   const rows = Object.fromEntries(db.prepare("SELECT * FROM holdings WHERE account_id = 'ira'").all().map((h: any) => [h.security_id, h]));
@@ -153,18 +147,18 @@ test("holdings: stored per account with the fresher price, lots added up, snapsh
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM holding_history WHERE account_id = 'ira' AND date = ?").get(today) as any).n, 3);
 
   // A second sync the same day replaces today's snapshot rather than adding to it.
-  await syncItem({ item_id: "i3", access_token: "tok3", cursor: null, identity_status: "ok" });
+  await syncItem({ item_id: "i3", access_token: "tok3", cursor: null });
   assert.equal((db.prepare("SELECT value FROM holding_history WHERE account_id = 'ira' AND security_id = 'vti'").get() as any).value, 2400);
 
   // Holdings not available (still loading, no consent...) keep what was stored and don't fail the sync.
   (plaid as any).investmentsHoldingsGet = plaidFailure("PRODUCT_NOT_READY");
-  const r2 = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null, identity_status: "ok" });
+  const r2 = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null });
   assert.deepEqual([r2.ok, r2.holdings], [true, 0]);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM holdings WHERE account_id = 'ira'").get() as any).n, 3);
 
   // Any other Plaid error fails the sync like other phases do.
   (plaid as any).investmentsHoldingsGet = plaidFailure("INTERNAL_SERVER_ERROR");
-  const r3 = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null, identity_status: "ok" });
+  const r3 = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null });
   assert.equal(r3.ok, false);
   assert.match(r3.error!, /INTERNAL_SERVER_ERROR/);
 });
@@ -175,6 +169,6 @@ test("items without investment accounts never call the holdings endpoint", async
   ] }));
   stub("transactionsSync", () => ({ added: [], modified: [], removed: [], has_more: false, next_cursor: "c2" }));
   (plaid as any).investmentsHoldingsGet = async () => { throw new Error("should not be called"); };
-  const r = await syncItem({ item_id: "i1", access_token: "tok", cursor: "c1", identity_status: "ok" });
+  const r = await syncItem({ item_id: "i1", access_token: "tok", cursor: "c1" });
   assert.equal(r.ok, true);
 });

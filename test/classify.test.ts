@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { accountGroup, accountKind, groupRank, GROUP_ORDER, ownerFromNames, signedBalance } from "../src/classify.js";
+import { accountGroup, accountKind, groupRank, GROUP_ORDER, signedBalance } from "../src/classify.js";
 
 test("accountGroup maps Plaid type/subtype to display groups", () => {
   assert.equal(accountGroup("depository", "checking"), "Checking");
@@ -39,22 +39,4 @@ test("groupRank follows GROUP_ORDER; unknown groups sort last", () => {
   assert.equal(groupRank("Checking"), 0);
   assert.ok(groupRank("Brokerage") < groupRank("401(k)"));
   assert.equal(groupRank("Not a group"), GROUP_ORDER.length);
-});
-
-test("ownerFromNames normalizes names across institutions", () => {
-  assert.equal(ownerFromNames([{ names: ["ALEX Q SMITH", "A Smith"] }]), "Alex Smith");
-  assert.equal(ownerFromNames([{ names: ["Alex Smith Jr."] }]), "Alex Smith");
-});
-
-test("joint accounts become 'A & B', sorted so order is stable", () => {
-  const a = ownerFromNames([{ names: ["Alex Smith"] }, { names: ["Sam Q. Smith"] }]);
-  const b = ownerFromNames([{ names: ["SAM SMITH"] }, { names: ["ALEX SMITH"] }]);
-  assert.equal(a, "Alex Smith & Sam Smith");
-  assert.equal(a, b);
-});
-
-test("organizations keep their full name; no owners gives null", () => {
-  assert.equal(ownerFromNames([{ names: ["smith family trust"] }]), "Smith Family Trust");
-  assert.equal(ownerFromNames([]), null);
-  assert.equal(ownerFromNames([{ names: [] }]), null);
 });

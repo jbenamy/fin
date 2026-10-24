@@ -37,7 +37,6 @@
 
   function health(i: Item): [Tone, string] {
     if (i.last_error || i.plaid?.error || i.plaid_error) return ["bad", "Error"];
-    if (i.identity_status === "needs_consent") return ["warn", "Needs permission"];
     if (!i.last_synced) return ["warn", "Never synced"];
     if (Date.now() - new Date(i.last_synced).getTime() > STALE_HOURS * 3600e3) return ["warn", "Stale"];
     return ["ok", "Healthy"];
@@ -136,7 +135,6 @@
           <h3>{i.label}</h3>
           <Pill tone={t} label={l} />
           <span class="spacer"></span>
-          {#if i.identity_status === "needs_consent"}<button class="sm" onclick={() => startLink(i.item_id)}>Grant permission</button>{/if}
           <button class="quiet sm" onclick={() => { renaming = i; nickname = i.nickname ?? ""; renameOpen = true; }}><Pencil size={14} aria-hidden="true" />Rename</button>
           <button class="quiet danger sm" onclick={() => { unlinking = i; unlinkErr = ""; unlinkOpen = true; }}><Unlink size={14} aria-hidden="true" />Unlink</button>
         </div>
@@ -147,7 +145,6 @@
           {#if i.plaid?.investments_last_success}<dt>Investments updated (Plaid)</dt><dd>{when(i.plaid.investments_last_success)}</dd>{/if}
           {#if i.plaid?.consent_expiration_time}<dt>Consent expires</dt><dd>{when(i.plaid.consent_expiration_time)}</dd>{/if}
           {#if i.plaid}<dt>Products</dt><dd>{(i.plaid.consented_products || []).join(", ") || "—"}</dd>{/if}
-          <dt>Owner detection</dt><dd>{i.identity_status ?? "not tried yet"}</dd>
         </dl>
         {#if i.last_error}<p class="err">Sync error: {i.last_error}</p>{/if}
         {#if i.plaid?.error}<p class="err">Plaid item error: {i.plaid.error}</p>{/if}

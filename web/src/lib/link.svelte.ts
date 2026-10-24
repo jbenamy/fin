@@ -1,4 +1,4 @@
-// Plaid Link: connect a new bank, or re-grant consent on an existing connection (update mode).
+// Plaid Link: connect a new bank.
 // Banks that use OAuth send the browser back to /accounts, where resumeOAuth() reopens Link.
 import { api, message } from "./api";
 import { changed } from "./data.svelte";
@@ -19,19 +19,17 @@ export const loadPlaid = () => script ??= new Promise<void>((resolve, reject) =>
   document.head.append(s);
 });
 
-/** Open Link for a new bank, or in update mode when `updateItemId` is given. */
-export async function startLink(updateItemId?: string) {
+/** Open Link for a new bank. */
+export async function startLink() {
   try {
-    const [{ link_token }] = await Promise.all([
-      api<{ link_token: string }>("/api/link-token", { method: "POST", json: updateItemId ? { item_id: updateItemId } : {} }), loadPlaid(),
-    ]);
-    openLink(link_token, undefined, updateItemId);
+    const [{ link_token }] = await Promise.all([api<{ link_token: string }>("/api/link-token", { method: "POST", json: {} }), loadPlaid()]);
+    openLink(link_token);
   } catch (e) { alert(message(e)); }
 }
 
-function openLink(token: string, receivedRedirectUri?: string, updateItemId?: string) {
+function openLink(token: string, receivedRedirectUri?: string) {
   // Persist enough context to resume after an OAuth redirect.
-  if (!receivedRedirectUri) store.set("link_ctx", JSON.stringify({ token, updateItemId: updateItemId ?? null }));
+  if (!receivedRedirectUri) store.set("link_ctx", JSON.stringify({ token }));
   const finish = () => { store.remove("link_ctx"); if (location.search.includes("oauth_state_id")) navigate("/accounts" + location.hash, true); };
   Plaid.create({
     token, receivedRedirectUri,
@@ -39,8 +37,7 @@ function openLink(token: string, receivedRedirectUri?: string, updateItemId?: st
       finish();
       linking.busy = true;
       try {
-        if (updateItemId) await api("/api/item-updated", { method: "POST", json: { item_id: updateItemId } });
-        else await api("/api/exchange", { method: "POST", json: { public_token, institution: meta.institution?.name } });
+        await api("/api/exchange", { method: "POST", json: { public_token, institution: meta.institution?.name } });
       } catch (e) { alert(message(e)); }
       linking.busy = false;
       await changed();
@@ -55,6 +52,6 @@ export async function resumeOAuth() {
   const received = location.href; // exactly what Plaid redirected to, before anything else changes the address
   try {
     const ctx = JSON.parse(store.get("link_ctx") ?? "null");
-    if (ctx) { await loadPlaid(); openLink(ctx.token, received, ctx.updateItemId ?? undefined); }
+    if (ctx) { await loadPlaid(); openLink(ctx.token, received); }
   } catch {}
 }

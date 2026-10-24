@@ -1,4 +1,4 @@
-import type { InvestmentTransaction, RemovedTransaction, Transaction } from "plaid";
+import type { Holding, InvestmentTransaction, RemovedTransaction, Security, Transaction } from "plaid";
 import { ownerFromNames } from "./classify.js";
 import { db, transaction } from "./db.js";
 import { invalidatePlaidStatus } from "./plaidStatus.js";
@@ -7,7 +7,7 @@ import type { ItemRow } from "./types.js";
 
 export type SyncItem = Pick<ItemRow, "item_id" | "access_token" | "cursor" | "identity_status">;
 
-type Phase = "balances" | "owners" | "transactions";
+type Phase = "balances" | "owners" | "transactions" | "holdings";
 export type SyncEvent =
   | { event: "start"; institutions: string[] }
   | { event: "item_start"; institution: string }
@@ -19,7 +19,7 @@ export type Progress = (e: SyncEvent) => void;
 export interface SyncResult {
   institution: string; ok: boolean; error?: string;
   accounts: number; registerAccounts: number; balanceOnlyAccounts: number;
-  added: number; modified: number; removed: number; ownersDetected: number;
+  added: number; modified: number; removed: number; ownersDetected: number; holdings: number;
 }
 
 const upsertAccount = db.prepare(`
@@ -34,6 +34,7 @@ const upsertTx = db.prepare(`
   ON CONFLICT(transaction_id) DO UPDATE SET account_id=excluded.account_id, date=excluded.date, name=excluded.name,
     merchant=excluded.merchant, category=excluded.category, amount=excluded.amount, pending=excluded.pending`);
 const deleteTx = db.prepare("DELETE FROM transactions WHERE transaction_id = ?");
+const snapshotBalance = db.prepare("INSERT OR REPLACE INTO balance_history (account_id, date, balance) VALUES (?, ?, ?)");
 
 interface Registers {
   /** Accounts whose transactions come from /transactions/sync. */
@@ -42,15 +43,18 @@ interface Registers {
   investment: { account_id: string; inv_tx_synced: string | null }[];
 }
 
-async function syncBalances(item: SyncItem): Promise<{ registers: Registers; total: number }> {
+async function syncBalances(item: SyncItem): Promise<{ registers: Registers; investmentAccounts: string[]; total: number }> {
   const { data } = await plaid.accountsGet({ access_token: item.access_token });
-  const now = new Date().toISOString();
-  for (const a of data.accounts) {
-    upsertAccount.run(
-      a.account_id, item.item_id, a.official_name ?? a.name, a.mask ?? null, a.type, a.subtype ?? null,
-      a.balances.current ?? null, a.balances.available ?? null, a.balances.iso_currency_code ?? "USD", now,
-    );
-  }
+  const now = new Date().toISOString(), today = now.slice(0, 10);
+  transaction(() => {
+    for (const a of data.accounts) {
+      upsertAccount.run(
+        a.account_id, item.item_id, a.official_name ?? a.name, a.mask ?? null, a.type, a.subtype ?? null,
+        a.balances.current ?? null, a.balances.available ?? null, a.balances.iso_currency_code ?? "USD", now,
+      );
+      snapshotBalance.run(a.account_id, today, a.balances.current ?? null);
+    }
+  });
   // account_view decides which accounts have a register (most investment accounts show a balance only).
   // Only accounts Plaid still returns: a closed account left in the database would be rejected in account_ids.
   const live = new Set(data.accounts.map((a) => a.account_id));
@@ -58,7 +62,8 @@ async function syncBalances(item: SyncItem): Promise<{ registers: Registers; tot
     .all(item.item_id) as { account_id: string; type: string; inv_tx_synced: string | null }[]).filter((r) => live.has(r.account_id));
   const cash = new Set(rows.filter((r) => r.type !== "investment").map((r) => r.account_id));
   const investment = rows.filter((r) => r.type === "investment");
-  return { registers: { cash, investment }, total: data.accounts.length };
+  const investmentAccounts = data.accounts.filter((a) => a.type === "investment").map((a) => a.account_id);
+  return { registers: { cash, investment }, investmentAccounts, total: data.accounts.length };
 }
 
 /** Detect account owners via Plaid Identity. Failure here never fails the sync. Stores names only. */
@@ -161,14 +166,69 @@ async function syncInvestmentTransactions(item: SyncItem, accounts: Registers["i
   return { added: [...after].filter((id) => !before.has(id)).length, removed: [...before].filter((id) => !after.has(id)).length };
 }
 
+// Plaid errors that mean "no holdings for this Item right now", not a failed sync: data still loading after Link,
+// the institution or Item doesn't offer Investments, or the Item was linked without Investments consent.
+const HOLDINGS_UNAVAILABLE = new Set([
+  "PRODUCT_NOT_READY", "PRODUCTS_NOT_SUPPORTED", "NO_INVESTMENT_ACCOUNTS", "ADDITIONAL_CONSENT_REQUIRED", "INVALID_PRODUCT", "CONSENT_NOT_GRANTED",
+]);
+
+/** Price and value of a position: the broker's, unless the security's market close is more recent (cash is always the broker's). */
+function pricing(h: Holding, s: Security | undefined) {
+  const brokerAsOf = h.institution_price_as_of ?? h.institution_price_datetime?.slice(0, 10) ?? null;
+  const close = s?.close_price, closeAsOf = s?.close_price_as_of ?? null;
+  const cash = !!s?.is_cash_equivalent || s?.type === "cash";
+  if (!cash && close != null && closeAsOf && (!brokerAsOf || closeAsOf > brokerAsOf)) {
+    return { price: close, asOf: closeAsOf, value: h.quantity * close };
+  }
+  return { price: h.institution_price, asOf: brokerAsOf, value: h.institution_value };
+}
+
+/**
+ * Positions in the Item's investment accounts, from /investments/holdings/get (one call returns every account with
+ * its securities). Replaces the Item's stored holdings and records today's snapshot. When holdings are unavailable
+ * (HOLDINGS_UNAVAILABLE) the previous holdings are kept and null is returned.
+ */
+async function syncHoldings(item: SyncItem, accountIds: string[]): Promise<number | null> {
+  let holdings: Holding[], securities: Security[];
+  try {
+    ({ data: { holdings, securities } } = await plaid.investmentsHoldingsGet({ access_token: item.access_token }));
+  } catch (e) {
+    if (HOLDINGS_UNAVAILABLE.has(plaidError(e)?.error_code ?? "")) return null;
+    throw e;
+  }
+  const byId = new Map(securities.map((s) => [s.security_id, s]));
+  const today = isoDate(Date.now()), inList = accountIds.map(() => "?").join(",");
+  // A security can appear twice in one account (e.g. separate lots): add them up. Unknown cost basis stays unknown.
+  const upsert = db.prepare(`
+    INSERT INTO holdings (account_id, security_id, name, ticker, security_type, sector, is_cash, quantity, price, price_as_of, value, cost_basis, vested_value, currency)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(account_id, security_id) DO UPDATE SET quantity = quantity + excluded.quantity, value = value + excluded.value,
+      cost_basis = cost_basis + excluded.cost_basis, vested_value = vested_value + excluded.vested_value`);
+  transaction(() => {
+    db.prepare(`DELETE FROM holdings WHERE account_id IN (${inList})`).run(...accountIds);
+    db.prepare(`DELETE FROM holding_history WHERE account_id IN (${inList}) AND date = ?`).run(...accountIds, today);
+    for (const h of holdings) {
+      const s = byId.get(h.security_id), p = pricing(h, s);
+      upsert.run(
+        h.account_id, h.security_id, s?.name ?? null, s?.ticker_symbol ?? null, s?.type ?? null, s?.sector ?? null,
+        s?.is_cash_equivalent || s?.type === "cash" ? 1 : 0, h.quantity, p.price, p.asOf, p.value, h.cost_basis ?? null,
+        h.vested_value ?? null, h.iso_currency_code ?? "USD",
+      );
+    }
+    db.prepare(`INSERT INTO holding_history (account_id, security_id, date, ticker, name, quantity, price, value)
+      SELECT account_id, security_id, ?, ticker, name, quantity, price, value FROM holdings WHERE account_id IN (${inList})`).run(today, ...accountIds);
+  });
+  return holdings.length;
+}
+
 export async function syncItem(item: SyncItem, onProgress: Progress = () => {}): Promise<SyncResult> {
   const institution = (db.prepare("SELECT institution FROM items WHERE item_id = ?").get(item.item_id) as { institution: string } | undefined)?.institution ?? "Unknown";
-  const result: SyncResult = { institution, ok: true, accounts: 0, registerAccounts: 0, balanceOnlyAccounts: 0, added: 0, modified: 0, removed: 0, ownersDetected: 0 };
+  const result: SyncResult = { institution, ok: true, accounts: 0, registerAccounts: 0, balanceOnlyAccounts: 0, added: 0, modified: 0, removed: 0, ownersDetected: 0, holdings: 0 };
   const phase = (p: Phase, detail: string) => onProgress({ event: "phase", institution, phase: p, detail });
   onProgress({ event: "item_start", institution });
   try {
     phase("balances", "Fetching accounts and balances…");
-    const { registers, total } = await syncBalances(item);
+    const { registers, investmentAccounts, total } = await syncBalances(item);
     const withRegister = registers.cash.size + registers.investment.length;
     result.accounts = total; result.registerAccounts = withRegister; result.balanceOnlyAccounts = total - withRegister;
     phase("balances", `${total} account${total === 1 ? "" : "s"} updated`);
@@ -181,6 +241,10 @@ export async function syncItem(item: SyncItem, onProgress: Progress = () => {}):
       phase("transactions", "Fetching investment account activity…");
       const inv = await syncInvestmentTransactions(item, registers.investment, (n) => phase("transactions", `${n} investment transactions fetched…`));
       result.added += inv.added; result.removed += inv.removed;
+    }
+    if (investmentAccounts.length > 0) {
+      phase("holdings", "Fetching investment holdings…");
+      result.holdings = (await syncHoldings(item, investmentAccounts)) ?? 0;
     }
     db.prepare("UPDATE items SET last_synced = ?, last_error = NULL WHERE item_id = ?").run(new Date().toISOString(), item.item_id);
   } catch (e) {

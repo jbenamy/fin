@@ -4,6 +4,7 @@ import { renderSidebar, setAllCollapsed } from "/js/sidebar.js";
 import { mountRegister } from "/js/register.js";
 import { initLink, startLink, resumeOAuth } from "/js/link.js";
 import { initSync } from "/js/sync.js";
+import { mountHoldings } from "/js/holdings.js";
 
 let accounts = [], groups = [], selected = null; // selected: an account id, or "o:<owner>"
 
@@ -32,14 +33,15 @@ function wireMain(acct) {
 const headline = (a) => `<h1>${esc(a.name)} <button class="ghost sm" id="edit">Edit</button></h1>
   <p class="muted">${esc(a.institution)} · ${esc(a.owner)} · ${esc(a.group)}</p>`;
 
-// Market value of an investment account: the whole page when it is balance-only, above the register otherwise.
+// Market value and holdings of an investment account: the whole page when it is balance-only, above the register otherwise.
 const marketValue = (a, note = "") => `<p style="font-size:28px" class="num">${usd(a.balance)}</p>
-  <p class="muted">Current value as of ${new Date(a.updated_at).toLocaleString()}.${note}</p>`;
+  <p class="muted">Current value as of ${new Date(a.updated_at).toLocaleString()}.${note}</p><div id="holdings"></div>`;
 
 function renderInvestment(acct) {
   $("#content").innerHTML = consentBanner() + headline(acct) +
     marketValue(acct, " Transaction register is not shown for brokerage accounts; turn it on under Edit for a cash management account.");
   wireMain(acct);
+  mountHoldings(acct.account_id);
 }
 
 async function renderRegister(id, acct, owner) {
@@ -61,6 +63,7 @@ async function renderRegister(id, acct, owner) {
     <tbody id="txbody"></tbody></table>
     <div id="txmore" class="muted" style="text-align:center;padding:14px;font-size:12px"></div>`;
   wireMain(acct);
+  if (acct?.kind === "investment") mountHoldings(acct.account_id);
   await mountRegister({ id, row, columns: acct ? 4 : 5 });
 }
 

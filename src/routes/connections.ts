@@ -73,6 +73,9 @@ connections.delete("/api/items/:id", async (req, res) => {
   }
   transaction(() => {
     db.prepare("DELETE FROM transactions WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
+    db.prepare("DELETE FROM holdings WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
+    db.prepare("DELETE FROM holding_history WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
+    db.prepare("DELETE FROM balance_history WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)").run(id);
     db.prepare("DELETE FROM accounts WHERE item_id = ?").run(id);
     db.prepare("DELETE FROM items WHERE item_id = ?").run(id);
   });

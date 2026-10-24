@@ -5,6 +5,7 @@ import { jsonErrors } from "./http.js";
 import { accounts } from "./routes/accounts.js";
 import { auth } from "./routes/auth.js";
 import { connections } from "./routes/connections.js";
+import { holdings } from "./routes/holdings.js";
 import { link } from "./routes/link.js";
 import { register } from "./routes/register.js";
 
@@ -25,7 +26,7 @@ export function createApp() {
   app.use(requireSession);
   app.use(express.static(publicDir, { extensions: ["html"] }));
 
-  app.use(auth, link, accounts, connections, register);
+  app.use(auth, link, accounts, connections, register, holdings);
   app.use(jsonErrors);
   return app;
 }

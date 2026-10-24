@@ -21,6 +21,7 @@ function summary(r) {
   if (!r.ok) return `✗ ${esc(r.error)}`;
   return `✓ ${plural(r.accounts, "account")} · ${r.added} new, ${r.modified} updated, ${r.removed} removed transactions` +
     (r.balanceOnlyAccounts ? ` · ${plural(r.balanceOnlyAccounts, "brokerage account")} (balance only)` : "") +
+    (r.holdings ? ` · ${plural(r.holdings, "holding")}` : "") +
     (r.ownersDetected ? ` · ${plural(r.ownersDetected, "owner")} detected` : "");
 }
 

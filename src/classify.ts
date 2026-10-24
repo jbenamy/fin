@@ -36,7 +36,25 @@ export type AccountKind = "cash" | "investment" | "debt" | "other";
 export const accountKind = (type: string): AccountKind =>
   type === "depository" ? "cash" : type === "investment" ? "investment" : type === "credit" || type === "loan" ? "debt" : "other";
 
-const SUFFIXES = new Set(["jr", "sr", "ii", "iii", "iv"]);
+/** Allocation classes, in display order. A class's index is also its chart color slot, so a color always means the same class. */
+export const ASSET_CLASSES = ["Stocks", "ETFs", "Mutual funds", "Bonds", "Cash", "Options", "Crypto", "Other"];
+
+/** Allocation class of a holding, from Plaid's security type. Money market funds (cash equivalents) count as cash. */
+export function assetClass(securityType: string | null, isCash: boolean): string {
+  if (isCash) return "Cash";
+  switch (securityType) {
+    case "equity": return "Stocks";
+    case "etf": return "ETFs";
+    case "mutual fund": return "Mutual funds";
+    case "fixed income": return "Bonds";
+    case "cash": return "Cash";
+    case "derivative": return "Options";
+    case "cryptocurrency": return "Crypto";
+    default: return "Other";
+  }
+}
+
+const SUFFIXES =new Set(["jr", "sr", "ii", "iii", "iv"]);
 const ORG = /\b(llc|inc|corp|trust|ltd|lp|estate|foundation|company|co)\b/i;
 const titleCase = (s: string) => s.toLowerCase().replace(/\b[a-z]/g, (c) => c.toUpperCase());
 

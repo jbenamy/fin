@@ -9,6 +9,8 @@ const { syncItem } = await import("../src/sync.js");
 const { getPlaidStatus, invalidatePlaidStatus } = await import("../src/plaidStatus.js");
 
 const stub = (name: string, fn: (...a: any[]) => unknown) => { (plaid as any)[name] = async (...a: any[]) => ({ data: await fn(...a) }); };
+// Default: no holdings. Tests that care about holdings replace this stub.
+stub("investmentsHoldingsGet", () => ({ holdings: [], securities: [] }));
 const tx = (id: string, account: string) => ({ transaction_id: id, account_id: account, date: "2026-10-01", name: "x", merchant_name: null, amount: 5, pending: false });
 
 test("sync stores balances and cash transactions, skips brokerage transactions, detects owners", async () => {
@@ -118,4 +120,59 @@ test("a brokerage account switched on manually gets a register; PRODUCT_NOT_READ
   (plaid as any).investmentsTransactionsGet = async () => { throw Object.assign(new Error("x"), { response: { data: { error_code: "PRODUCT_NOT_READY" } } }); };
   const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null, identity_status: "ok" });
   assert.equal(r2.ok, true);
+});
+
+const plaidFailure = (code: string) => async () => { throw Object.assign(new Error("x"), { response: { data: { error_code: code } } }); };
+
+test("holdings: stored per account with the fresher price, lots added up, snapshots recorded, kept when unavailable", async () => {
+  db.exec(`INSERT INTO items (item_id, access_token, institution) VALUES ('i3','tok3','Fidelity')`);
+  stub("accountsGet", () => ({ accounts: [
+    { account_id: "ira", name: "IRA", mask: "5", type: "investment", subtype: "ira", balances: { current: 3000, available: null, iso_currency_code: "USD" } },
+  ] }));
+  const holding = (security_id: string, quantity: number, price: number, cost_basis: number | null, asOf = "2026-10-20") =>
+    ({ account_id: "ira", security_id, quantity, institution_price: price, institution_price_as_of: asOf, institution_value: quantity * price, cost_basis, iso_currency_code: "USD" });
+  stub("investmentsHoldingsGet", () => ({
+    holdings: [holding("vti", 10, 200, 1500), holding("vti", 2, 200, 300), holding("mmf", 500, 1, 500, "2026-10-01"), holding("old", 1, 50, null, "2026-10-01")],
+    securities: [
+      { security_id: "vti", name: "Vanguard Total Stock Market ETF", ticker_symbol: "VTI", type: "etf", close_price: 199, close_price_as_of: "2026-10-19" },
+      { security_id: "mmf", name: "Money Market", ticker_symbol: "SPAXX", type: "mutual fund", is_cash_equivalent: true, close_price: 1, close_price_as_of: "2026-10-21" },
+      { security_id: "old", name: "Old Fund", ticker_symbol: null, type: "mutual fund", close_price: 55, close_price_as_of: "2026-10-21" },
+    ],
+  }));
+  const r = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null, identity_status: "ok" });
+  assert.equal(r.ok, true);
+  assert.equal(r.holdings, 4);
+  const rows = Object.fromEntries(db.prepare("SELECT * FROM holdings WHERE account_id = 'ira'").all().map((h: any) => [h.security_id, h]));
+  assert.deepEqual([rows.vti.quantity, rows.vti.value, rows.vti.cost_basis, rows.vti.price], [12, 2400, 1800, 200]);   // broker price is newer than the close
+  assert.deepEqual([rows.old.price, rows.old.price_as_of, rows.old.value], [55, "2026-10-21", 55]);                    // the close is newer
+  assert.deepEqual([rows.mmf.is_cash, rows.mmf.price, rows.mmf.price_as_of], [1, 1, "2026-10-01"]);                   // cash keeps the broker's price
+  const today = new Date().toISOString().slice(0, 10);
+  assert.deepEqual(db.prepare("SELECT date, balance FROM balance_history WHERE account_id = 'ira'").all().map((r: any) => ({ ...r })), [{ date: today, balance: 3000 }]);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM holding_history WHERE account_id = 'ira' AND date = ?").get(today) as any).n, 3);
+
+  // A second sync the same day replaces today's snapshot rather than adding to it.
+  await syncItem({ item_id: "i3", access_token: "tok3", cursor: null, identity_status: "ok" });
+  assert.equal((db.prepare("SELECT value FROM holding_history WHERE account_id = 'ira' AND security_id = 'vti'").get() as any).value, 2400);
+
+  // Holdings not available (still loading, no consent...) keep what was stored and don't fail the sync.
+  (plaid as any).investmentsHoldingsGet = plaidFailure("PRODUCT_NOT_READY");
+  const r2 = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null, identity_status: "ok" });
+  assert.deepEqual([r2.ok, r2.holdings], [true, 0]);
+  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM holdings WHERE account_id = 'ira'").get() as any).n, 3);
+
+  // Any other Plaid error fails the sync like other phases do.
+  (plaid as any).investmentsHoldingsGet = plaidFailure("INTERNAL_SERVER_ERROR");
+  const r3 = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null, identity_status: "ok" });
+  assert.equal(r3.ok, false);
+  assert.match(r3.error!, /INTERNAL_SERVER_ERROR/);
+});
+
+test("items without investment accounts never call the holdings endpoint", async () => {
+  stub("accountsGet", () => ({ accounts: [
+    { account_id: "cash", name: "Checking", mask: "1", type: "depository", subtype: "checking", balances: { current: 10, available: 9, iso_currency_code: "USD" } },
+  ] }));
+  stub("transactionsSync", () => ({ added: [], modified: [], removed: [], has_more: false, next_cursor: "c2" }));
+  (plaid as any).investmentsHoldingsGet = async () => { throw new Error("should not be called"); };
+  const r = await syncItem({ item_id: "i1", access_token: "tok", cursor: "c1", identity_status: "ok" });
+  assert.equal(r.ok, true);
 });

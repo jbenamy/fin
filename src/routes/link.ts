@@ -27,7 +27,10 @@ link.post("/api/link-token", async (req, res) => {
   const { data } = await plaid.linkTokenCreate({
     ...base,
     products: [Products.Transactions],
-    required_if_supported_products: [Products.Investments, Products.Identity],
+    required_if_supported_products: [Products.Identity],
+    // Consent now, billed only once /investments/* is first called: sync calls holdings only for Items that
+    // actually have investment accounts, so bank-only logins aren't billed for Investments.
+    additional_consented_products: [Products.Investments],
     transactions: { days_requested: 730 },
   });
   res.json({ link_token: data.link_token });

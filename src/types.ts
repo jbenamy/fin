@@ -20,3 +20,9 @@ export interface TransactionRow {
   transaction_id: string; account_id: string; date: string; name: string; merchant: string | null;
   category: string | null; amount: number; pending: number;
 }
+
+export interface HoldingRow {
+  account_id: string; security_id: string; name: string | null; ticker: string | null; security_type: string | null;
+  sector: string | null; is_cash: number; quantity: number; price: number | null; price_as_of: string | null;
+  value: number; cost_basis: number | null; vested_value: number | null; currency: string | null;
+}

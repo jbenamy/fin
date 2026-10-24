@@ -31,6 +31,11 @@ before(async () => {
   tx.run("p3", "joint", "2026-10-03", "AMZN Digital", "Amazon Digital");
   tx.run("p4", "joint", "2026-10-04", "SHELL OIL 12", null);
   tx.run("b1", "brk", "2026-10-05", "should never appear", null); // investment accounts have no register
+  const holding = db.prepare(`INSERT INTO holdings (account_id,security_id,name,ticker,security_type,is_cash,quantity,price,price_as_of,value,cost_basis)
+    VALUES ('brk',?,?,?,?,?,?,?,?,?,?)`);
+  holding.run("s1", "Vanguard Total Stock Market ETF", "VTI", "etf", 0, 30, 200, "2026-10-20", 6000, 4000);
+  holding.run("s2", "Apple Inc", "AAPL", "equity", 0, 10, 200, "2000-01-01", 2000, null);
+  holding.run("s3", "Money Market", "SPAXX", "mutual fund", 1, 1000, 1, "2026-10-20", 1000, 1000);
   db.exec(`INSERT INTO passkeys (id, public_key, counter, label, created_at) VALUES ('pk', x'00', 0, 'Test', '2026-10-01')`);
   cookie = "fin_session=" + createSession("pk");
   server = createApp().listen(0);
@@ -147,4 +152,17 @@ test("errors answer JSON: Plaid's message with 500, malformed JSON with 400, oth
     const hidden = await fetch("/api/link-token", { method: "POST" });
     assert.deepEqual([hidden.status, await hidden.json()], [500, { error: "Internal server error" }]);
   } finally { plaid.linkTokenCreate = original; console.error = err; }
+});
+
+test("holdings API: positions largest first, gain from cost basis, allocation in fixed class order", async () => {
+  const data = await get("/api/holdings?account=brk");
+  assert.equal(data.synced, true);
+  assert.equal(data.total, 9000);
+  assert.deepEqual(data.holdings.map((h: any) => [h.ticker, h.class, h.pct]), [["VTI", "ETFs", 6000 / 9000], ["AAPL", "Stocks", 2000 / 9000], ["SPAXX", "Cash", 1000 / 9000]]);
+  const [vti, aapl] = data.holdings;
+  assert.deepEqual([vti.gain, vti.gain_pct, vti.stale], [2000, 0.5, false]);
+  assert.deepEqual([aapl.gain, aapl.gain_pct, aapl.stale], [null, null, true]);
+  assert.deepEqual(data.allocation.map((c: any) => [c.class, c.slot, c.value]), [["Stocks", 0, 2000], ["ETFs", 1, 6000], ["Cash", 4, 1000]]);
+  const none = await get("/api/holdings?account=chk");
+  assert.deepEqual([none.synced, none.holdings.length, none.allocation.length], [false, 0, 0]);
 });

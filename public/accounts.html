@@ -39,6 +39,14 @@
   .chip { display:inline-flex; align-items:center; gap:6px; background:var(--card); border:1px solid var(--line); border-radius:99px; padding:3px 6px 3px 12px; font-size:13px }
   .chip button { background:none; color:var(--muted); border:0; padding:0 6px; font-size:16px; line-height:1; cursor:pointer }
   .pending { opacity:.55 }
+  /* Holdings: allocation bar (one fixed color per asset class, validated for the dark surface) + positions table */
+  #holdings { --c0:#3987e5; --c1:#d95926; --c2:#199e70; --c3:#c98500; --c4:#d55181; --c5:#008300; --c6:#9085e9; --c7:#e66767; margin-bottom:20px }
+  #holdings h2 { font-size:13px; font-weight:600; margin:18px 0 8px }
+  .alloc { display:flex; gap:2px; height:14px; max-width:640px } .alloc .seg { min-width:2px } .alloc .seg:first-child { border-radius:4px 0 0 4px } .alloc .seg:last-child { border-radius:0 4px 4px 0 }
+  .alloc .seg:only-child { border-radius:4px } .alloc .seg:hover { filter:brightness(1.25) }
+  .legend { list-style:none; padding:0; margin:10px 0 0; max-width:360px; font-size:13px } .legend li { display:grid; grid-template-columns:12px 1fr auto 56px; gap:8px; align-items:center; padding:2px 0 }
+  .legend .sw { width:10px; height:10px; border-radius:2px }
+  .scroll { overflow-x:auto } table.holdings td small { display:block; font-size:11px } .stale { color:var(--warn) }
   @media (max-width:700px) { body { flex-direction:column } aside { width:auto; position:static; height:auto; align-self:stretch; border-right:0; border-bottom:1px solid var(--line) } #accounts { max-height:50vh } }
 </style>
 </head>

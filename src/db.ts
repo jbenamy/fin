@@ -86,6 +86,48 @@ addColumn("accounts", "register_override", "INTEGER");
 // Date (YYYY-MM-DD) of the last /investments/transactions/get for an investment account with a register.
 addColumn("accounts", "inv_tx_synced", "TEXT");
 
+// Investment positions (from /investments/holdings/get), replaced per Item on every sync. The security's display
+// fields are copied in: Plaid's security_id is not a stable key (it can change on a corporate action).
+// `price`/`price_as_of`/`value` are whichever of the broker's price and the market close is fresher.
+// Daily history (one row per account / position per UTC date, overwritten by later syncs that day) exists so
+// value-over-time charts become possible: Plaid has no historical balances or holdings.
+db.exec(`
+CREATE TABLE IF NOT EXISTS holdings (
+  account_id TEXT NOT NULL,
+  security_id TEXT NOT NULL,
+  name TEXT,
+  ticker TEXT,
+  security_type TEXT,             -- Plaid's security type: equity, etf, mutual fund, fixed income, cash, ...
+  sector TEXT,
+  is_cash INTEGER NOT NULL DEFAULT 0,
+  quantity REAL NOT NULL,
+  price REAL,
+  price_as_of TEXT,
+  value REAL NOT NULL,
+  cost_basis REAL,
+  vested_value REAL,
+  currency TEXT,
+  PRIMARY KEY (account_id, security_id)
+);
+CREATE TABLE IF NOT EXISTS balance_history (
+  account_id TEXT NOT NULL,
+  date TEXT NOT NULL,             -- YYYY-MM-DD (UTC)
+  balance REAL,                   -- Plaid's current balance, unsigned like accounts.current_balance
+  PRIMARY KEY (account_id, date)
+);
+CREATE TABLE IF NOT EXISTS holding_history (
+  account_id TEXT NOT NULL,
+  security_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  ticker TEXT,
+  name TEXT,
+  quantity REAL NOT NULL,
+  price REAL,
+  value REAL NOT NULL,
+  PRIMARY KEY (account_id, security_id, date)
+);
+`);
+
 // One definition of "who owns this account": manual override, else Plaid-detected, else Unassigned.
 // And of "has a transaction register": every non-investment account has one; an investment account follows its
 // manual override, else `register_auto` (only cash management accounts, which Schwab and others type as investment).

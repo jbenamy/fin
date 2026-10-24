@@ -79,20 +79,22 @@
     <section class="owner">
       <div class="ohead"><Avatar name={o} size={34} /><h2>{o}</h2><span class="muted small">{plural(mine.length, "account")}</span><span class="total num">{usd(sum(mine))}</span></div>
       <!-- Groups flow side by side, each a column of its accounts, so single-account groups don't leave empty rows.
-           Each column is a subgrid spanning its heading + cards, so headings and the nth cards line up across columns. -->
+           Cards are all one height (the name is one line, the institution always takes two), so side-by-side cards line up. -->
       <div class="groups">
         {#each byGroup(mine) as [group, list] (group)}
           {@const Icon = groupIcon(group)}
-          <div class="group" style:--rows={list.length + 1}>
+          <div>
             <div class="grp" title={group}><Icon size={14} aria-hidden="true" /><span>{group}</span><span class="num">{usd(sum(list))}</span></div>
-            {#each list as a (a.account_id)}
-              <a class="acard card" href={"/accounts#" + encodeURIComponent(a.account_id)} aria-label="{a.name}, {usd(a.balance)}">
-                <div class="atop"><IconChip icon={Icon} tone={KIND_TONE[a.kind]} size={30} />
-                  <div class="aname"><div class="n">{a.name}</div><div class="w">{where(a)}</div></div></div>
-                <div class="aval num" class:neg={(a.balance ?? 0) < 0}>{usd(a.balance)}</div>
-                <div class="afoot">{note(a)}</div>
-              </a>
-            {/each}
+            <div class="cards">
+              {#each list as a (a.account_id)}
+                <a class="acard card" href={"/accounts#" + encodeURIComponent(a.account_id)} aria-label="{a.name}, {usd(a.balance)}">
+                  <div class="atop"><IconChip icon={Icon} tone={KIND_TONE[a.kind]} size={30} />
+                    <div class="aname"><div class="n" title={a.name}>{a.name}</div><div class="w" title={where(a)}>{where(a)}</div></div></div>
+                  <div class="aval num" class:neg={(a.balance ?? 0) < 0}>{usd(a.balance)}</div>
+                  <div class="afoot">{note(a)}</div>
+                </a>
+              {/each}
+            </div>
           </div>
         {/each}
       </div>
@@ -121,15 +123,17 @@
   .owner { margin-top:26px }
   .ohead { display:flex; align-items:center; gap:12px; padding-bottom:10px; border-bottom:1px solid var(--line) }
   .ohead h2 { font-size:17px } .ohead .muted { flex:1 } .total { font-size:17px; font-weight:600 }
-  .grp { display:flex; align-items:center; gap:7px; margin:16px 0 -2px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted) }
+  .grp { display:flex; align-items:center; gap:7px; margin:18px 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted) }
   .grp span:first-of-type { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
-  .groups { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px 14px }
-  .group { display:grid; grid-template-rows:subgrid; grid-row:span var(--rows) }
-  .acard { display:flex; flex-direction:column; padding:14px 16px; color:inherit; text-decoration:none; min-height:132px; transition:border-color .12s, transform .12s }
+  .groups { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:4px 14px }
+  .groups > div { min-width:0 } .cards { display:grid; grid-template-columns:minmax(0, 1fr); gap:12px }
+  .acard { display:flex; flex-direction:column; padding:14px 16px; color:inherit; text-decoration:none; transition:border-color .12s, transform .12s }
   .acard:hover { border-color:var(--accent); color:inherit; transform:translateY(-1px) }
   .atop { display:flex; gap:10px; align-items:flex-start } .aname { min-width:0 }
-  .n { font-weight:600; overflow-wrap:anywhere } .w { color:var(--muted); font-size:12px; overflow-wrap:anywhere }
+  /* Fixed line counts so every card is the same height; the full text is in the title tooltip. */
+  .n { font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .w { color:var(--muted); font-size:12px; line-height:1.4; min-height:2.8em; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden }
   .aval { font-size:24px; font-weight:600; margin-top:auto; padding-top:14px; letter-spacing:-.01em }
-  .afoot { color:var(--muted); font-size:12px; min-height:1.4em }
+  .afoot { color:var(--muted); font-size:12px; line-height:1.4; min-height:1.4em }
   @media (max-width:560px) { .value { font-size:34px } .toggle { margin-left:0 } }
 </style>

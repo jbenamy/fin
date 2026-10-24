@@ -29,7 +29,8 @@ Every signed-in page shares one frame: a sidebar with the pages, **Connect bank*
 | `/passkeys` | The passkeys that can sign in: add one on this device, make a one-time invite link for another device, remove one, sign out |
 | `/login` | Sign in with a passkey (or create the first one) |
 
-Owners are assigned per account (Connections page or the account's Edit dialog); accounts are grouped by type automatically.
+Each account's owner is set by hand (the Owner menu on Connections, or **Edit** on the account); until then it is listed under
+"Unassigned". Accounts are grouped by type automatically (overridable under **Edit**).
 Credit cards and loans are shown as negative (owed) so totals add up.
 
 ## Configuration
@@ -51,14 +52,15 @@ In the container, any variable whose value is a 1Password secret reference (`op:
 startup by `fin-entrypoint.sh`, so `.env` on the server holds references instead of secrets. It reads them with a
 service account that can only read one dedicated vault for the server (one item per app, fields named after the
 variables they replace):
-1. Create a vault for the server (e.g. `my-server`) holding an item `fin` with fields `PLAID_CLIENT_ID` and
-   `PLAID_SECRET` (in the 1Password app, so the secret stays out of shell history).
+1. Create a vault for the server (e.g. `my-server`) holding an item `fin` with fields `PLAID_CLIENT_ID`,
+   `PLAID_SECRET` and, if you encrypt the database, `DB_KEY` (in the 1Password app, so secrets stay out of shell history).
 2. Create the service account and send its token straight to the server:
    ```
    op service-account create my-server --vault my-server:read_items --raw \
      | ssh <host> 'install -D -m 400 -o 1000 -g 1000 /dev/stdin /etc/op/token'
    ```
-3. In the server's `.env`, set `PLAID_CLIENT_ID=op://my-server/fin/PLAID_CLIENT_ID` and `PLAID_SECRET=op://my-server/fin/PLAID_SECRET`.
+3. In the server's `.env`, set `PLAID_CLIENT_ID=op://my-server/fin/PLAID_CLIENT_ID`, `PLAID_SECRET=op://my-server/fin/PLAID_SECRET`
+   and `DB_KEY=op://my-server/fin/DB_KEY`, as in `.env.example`.
 The token file is owned by uid 1000 because the container runs as `node`. The token is printed only once; if it is
 lost, create a new service account (and delete the old one in 1Password). Startup fails (after a 60 s pause, to stay
 within 1Password's rate limits) if a reference can't be read. Without 1Password, put plain values in `.env` and set
@@ -93,8 +95,11 @@ The daily sync runs inside the server process, so run a single instance. **Sync 
 src/app.ts            Express app: serves the web app for each page address, static files, routers
 src/auth.ts           Sessions and the login guard in front of every page and API
 src/routes/           auth (passkeys), link (Plaid Link + sync), accounts, register (transactions/payees), holdings, connections
-src/sync.ts           Per-connection sync: balances, owners, transactions, holdings, daily snapshots
-src/classify.ts       Account grouping, owner-name normalization, signed balances
+src/server.ts         Entry point: the daily sync cron, then listen
+src/db.ts             SQLite schema, additive migrations, the account_view (effective owner, register)
+src/dto.ts            Account JSON for the web app (signed balance, kind, group)
+src/sync.ts           Per-connection sync: balances, transactions, investment activity, holdings, daily snapshots
+src/classify.ts       Account grouping and order, asset classes, signed balances
 src/duplicates.ts     Same account seen through several connections
 src/plaidStatus.ts    Cached /item/get status for the Connections page
 web/                  The browser app: Svelte 5 + Vite, its own pnpm workspace package (built into dist/web)

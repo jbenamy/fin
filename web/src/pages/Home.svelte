@@ -7,7 +7,7 @@
   import PageHeader from "../components/PageHeader.svelte";
   import Switch from "../components/Switch.svelte";
   import { data } from "../lib/data.svelte";
-  import { balanceOnly, byGroup, dateTime, ownerList, plural, sum, usd, usd0, where } from "../lib/format";
+  import { byGroup, dateTime, ownerList, plural, sum, usd, usd0, where } from "../lib/format";
   import { groupIcon, KIND_TONE } from "../lib/icons";
   import { startLink } from "../lib/link.svelte";
   import { store } from "../lib/store";
@@ -78,22 +78,21 @@
   {#each sections as { o, mine } (o)}
     <section class="owner">
       <div class="ohead"><Avatar name={o} size={34} /><h2>{o}</h2><span class="muted small">{plural(mine.length, "account")}</span><span class="total num">{usd(sum(mine))}</span></div>
-      <!-- Groups flow side by side, each a column of its accounts, so single-account groups don't leave empty rows. -->
+      <!-- Groups flow side by side, each a column of its accounts, so single-account groups don't leave empty rows.
+           Each column is a subgrid spanning its heading + cards, so headings and the nth cards line up across columns. -->
       <div class="groups">
         {#each byGroup(mine) as [group, list] (group)}
           {@const Icon = groupIcon(group)}
-          <div>
-            <div class="grp"><Icon size={14} aria-hidden="true" /><span>{group}{balanceOnly(list) ? " · balance only" : ""}</span><span class="num">{usd(sum(list))}</span></div>
-            <div class="cards">
-              {#each list as a (a.account_id)}
-                <a class="acard card" href={"/accounts#" + encodeURIComponent(a.account_id)} aria-label="{a.name}, {usd(a.balance)}">
-                  <div class="atop"><IconChip icon={Icon} tone={KIND_TONE[a.kind]} size={30} />
-                    <div class="aname"><div class="n">{a.name}</div><div class="w">{where(a)}</div></div></div>
-                  <div class="aval num" class:neg={(a.balance ?? 0) < 0}>{usd(a.balance)}</div>
-                  <div class="afoot">{note(a)}</div>
-                </a>
-              {/each}
-            </div>
+          <div class="group" style:--rows={list.length + 1}>
+            <div class="grp" title={group}><Icon size={14} aria-hidden="true" /><span>{group}</span><span class="num">{usd(sum(list))}</span></div>
+            {#each list as a (a.account_id)}
+              <a class="acard card" href={"/accounts#" + encodeURIComponent(a.account_id)} aria-label="{a.name}, {usd(a.balance)}">
+                <div class="atop"><IconChip icon={Icon} tone={KIND_TONE[a.kind]} size={30} />
+                  <div class="aname"><div class="n">{a.name}</div><div class="w">{where(a)}</div></div></div>
+                <div class="aval num" class:neg={(a.balance ?? 0) < 0}>{usd(a.balance)}</div>
+                <div class="afoot">{note(a)}</div>
+              </a>
+            {/each}
           </div>
         {/each}
       </div>
@@ -122,10 +121,10 @@
   .owner { margin-top:26px }
   .ohead { display:flex; align-items:center; gap:12px; padding-bottom:10px; border-bottom:1px solid var(--line) }
   .ohead h2 { font-size:17px } .ohead .muted { flex:1 } .total { font-size:17px; font-weight:600 }
-  .grp { display:flex; align-items:center; gap:7px; margin:18px 0 10px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted) }
-  .grp span:first-of-type { flex:1 }
-  .groups { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:4px 14px }
-  .cards { display:grid; gap:12px }
+  .grp { display:flex; align-items:center; gap:7px; margin:16px 0 -2px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted) }
+  .grp span:first-of-type { flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+  .groups { display:grid; grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); gap:12px 14px }
+  .group { display:grid; grid-template-rows:subgrid; grid-row:span var(--rows) }
   .acard { display:flex; flex-direction:column; padding:14px 16px; color:inherit; text-decoration:none; min-height:132px; transition:border-color .12s, transform .12s }
   .acard:hover { border-color:var(--accent); color:inherit; transform:translateY(-1px) }
   .atop { display:flex; gap:10px; align-items:flex-start } .aname { min-width:0 }

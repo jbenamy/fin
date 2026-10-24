@@ -76,7 +76,7 @@ function addColumn(table: string, column: string, def: string) {
 addColumn("accounts", "owner_detected", "TEXT");
 addColumn("accounts", "owner_override", "TEXT");
 addColumn("accounts", "group_override", "TEXT");
-// null = not tried yet | ok | needs_consent (re-link in update mode) | unsupported
+// Unused since Plaid Identity was removed (2026-10-24); kept because migrations are additive only.
 addColumn("items", "identity_status", "TEXT");
 addColumn("items", "nickname", "TEXT");
 addColumn("items", "created_at", "TEXT");
@@ -128,7 +128,8 @@ CREATE TABLE IF NOT EXISTS holding_history (
 );
 `);
 
-// One definition of "who owns this account": manual override, else Plaid-detected, else Unassigned.
+// One definition of "who owns this account": manual override, else the owner Plaid Identity detected before it was
+// removed (owner_detected, no longer written), else Unassigned.
 // And of "has a transaction register": every non-investment account has one; an investment account follows its
 // manual override, else `register_auto` (only cash management accounts, which Schwab and others type as investment).
 // Recreated on every start so a changed definition reaches existing databases.

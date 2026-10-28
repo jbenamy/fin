@@ -5,7 +5,7 @@
   import PageHeader from "../components/PageHeader.svelte";
   import Pill from "../components/Pill.svelte";
   import { api, message, signOut } from "../lib/api";
-  import { cmp, shortDate } from "../lib/format";
+  import { cmp, dateTime, shortDate } from "../lib/format";
   import type { Passkey } from "../lib/types";
   import { registerPasskey } from "../lib/webauthn";
 
@@ -31,7 +31,7 @@
   async function invite() {
     try {
       const r = await api<{ url: string; expires_at: string }>("/api/passkeys/invite", { method: "POST" });
-      invUrl = r.url; invUntil = new Date(r.expires_at).toLocaleString(); copied = false; invOpen = true;
+      invUrl = r.url; invUntil = dateTime(r.expires_at); copied = false; invOpen = true;
       setTimeout(() => invInput?.select());
     } catch (e) { error = message(e); }
   }
@@ -51,7 +51,7 @@
   {#snippet actions()}
     <button onclick={() => { addLabel = ""; addErr = ""; addOpen = true; }}><Plus size={16} aria-hidden="true" />Add passkey on this device</button>
     <button class="ghost" onclick={invite} title="A one-time link to add a passkey on another device"><Send size={15} aria-hidden="true" />Invite link</button>
-    <button class="ghost" onclick={signOut}><LogOut size={15} aria-hidden="true" />Sign out</button>
+    <button class="ghost signout" onclick={signOut}><LogOut size={15} aria-hidden="true" />Sign out</button>
   {/snippet}
 </PageHeader>
 
@@ -97,4 +97,5 @@
   .key { display:inline-flex; padding:6px; border-radius:8px; background:var(--accent-soft); color:var(--accent) }
   .mono { font-family:ui-monospace, monospace; font-size:12px }
   @media (max-width:560px) { .hide-sm { display:none } }
+  @media (min-width:821px) { .signout { display:none } } /* the nav rail has Sign out; phones only have this one */
 </style>

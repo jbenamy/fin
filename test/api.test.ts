@@ -33,9 +33,10 @@ before(async () => {
   tx.run("b1", "brk", "2026-10-05", "should never appear", null); // investment accounts have no register
   const holding = db.prepare(`INSERT INTO holdings (account_id,security_id,name,ticker,security_type,is_cash,quantity,price,price_as_of,value,cost_basis)
     VALUES ('brk',?,?,?,?,?,?,?,?,?,?)`);
-  holding.run("s1", "Vanguard Total Stock Market ETF", "VTI", "etf", 0, 30, 200, "2026-10-20", 6000, 4000);
+  const today = new Date().toISOString().slice(0, 10); // fresh prices must stay fresh whenever the test runs
+  holding.run("s1", "Vanguard Total Stock Market ETF", "VTI", "etf", 0, 30, 200, today, 6000, 4000);
   holding.run("s2", "Apple Inc", "AAPL", "equity", 0, 10, 200, "2000-01-01", 2000, null);
-  holding.run("s3", "Money Market", "SPAXX", "mutual fund", 1, 1000, 1, "2026-10-20", 1000, 1000);
+  holding.run("s3", "Money Market", "SPAXX", "mutual fund", 1, 1000, 1, today, 1000, 1000);
   db.exec(`INSERT INTO passkeys (id, public_key, counter, label, created_at) VALUES ('pk', x'00', 0, 'Test', '2026-10-01')`);
   cookie = "fin_session=" + createSession("pk");
   server = createApp().listen(0);

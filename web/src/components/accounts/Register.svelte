@@ -80,6 +80,7 @@
   }
   $effect(() => { if (active >= 0) document.getElementById("popt" + active)?.scrollIntoView({ block: "nearest" }); });
 
+  const cols = $derived(names ? 4 : 3);
   const category = (c: string | null) => (c || "").replace(/_/g, " ").toLowerCase();
 </script>
 
@@ -111,19 +112,20 @@
 
 <div class="card scroll-x">
   <table class="data">
-    <thead><tr><th>Date</th>{#if names}<th>Account</th>{/if}<th>Payee</th><th>Category</th><th class="num">Amount</th></tr></thead>
+    <thead><tr><th>Payee</th>{#if names}<th>Account</th>{/if}<th>Category</th><th class="num">Amount</th></tr></thead>
     <tbody>
-      {#each rows as t (t.transaction_id)}
+      <!-- Rows come newest first; a day heading starts each new date instead of repeating it on every row. -->
+      {#each rows as t, n (t.transaction_id)}
         {@const amt = -t.amount /* Plaid: positive = money out */}
+        {#if n === 0 || rows[n - 1].date !== t.date}<tr class="dayrow"><th colspan={cols} scope="colgroup">{day(t.date)}</th></tr>{/if}
         <tr class:pending={t.pending}>
-          <td class="muted date">{day(t.date)}</td>
-          {#if names}<td class="muted">{names[t.account_id]}</td>{/if}
-          <td class="payee">{t.merchant || t.name}{#if t.pending}<span class="tag">Pending</span>{/if}</td>
-          <td>{#if t.category}<span class="cat">{category(t.category)}</span>{/if}</td>
-          <td class="num" class:neg={amt < 0} class:pos={amt > 0}>{amt > 0 ? "+" : ""}{usd(amt)}</td>
+          <td class="payee"><span class="fade">{t.merchant || t.name}</span>{#if t.pending}<span class="tag">Pending</span>{/if}</td>
+          {#if names}<td class="muted fade">{names[t.account_id]}</td>{/if}
+          <td class="fade">{#if t.category}<span class="cat">{category(t.category)}</span>{/if}</td>
+          <td class="num fade" class:neg={amt < 0} class:pos={amt > 0}>{amt > 0 ? "+" : ""}{usd(amt)}</td>
         </tr>
       {:else}
-        {#if !status}<tr><td colspan={names ? 5 : 4} class="muted">{filter.payee || filter.q ? "No matching transactions." : "No transactions yet."}</td></tr>{/if}
+        {#if !status}<tr><td colspan={cols} class="muted">{filter.payee || filter.q ? "No matching transactions." : "No transactions yet."}</td></tr>{/if}
       {/each}
     </tbody>
   </table>
@@ -145,9 +147,11 @@
   .popt .n { color:var(--muted); font-variant-numeric:tabular-nums } mark { background:none; color:var(--accent); font-weight:600 }
   .pnote { padding:7px 10px; color:var(--muted); font-size:12px }
   .fchip { display:inline-flex; align-items:center; gap:6px; background:var(--accent-soft); color:var(--accent-strong); border-radius:99px; padding:3px 4px 3px 12px; font-size:13px }
-  .date { white-space:nowrap } .payee { font-weight:500 }
+  .payee { font-weight:500 }
+  .dayrow th { padding:9px 14px 7px; font-size:12px; font-weight:600; color:var(--muted); background:var(--surface-2) }
+  table :global(tbody tr.dayrow:hover th) { background:var(--surface-2) }
   .cat { font-size:12px; color:var(--muted); background:var(--surface-2); border:1px solid var(--line); padding:1px 8px; border-radius:99px; white-space:nowrap }
   .tag { margin-left:8px; font-size:11px; color:var(--warn); background:var(--warn-soft); padding:1px 7px; border-radius:99px }
-  tr.pending td { opacity:.6 }
+  tr.pending .fade { opacity:.6 } /* the Pending tag itself stays full strength */
   .foot { text-align:center; padding:14px; font-size:12px }
 </style>

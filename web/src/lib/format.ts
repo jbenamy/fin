@@ -37,14 +37,20 @@ export const balanceOnly = (list: Account[]) => list.every((a) => !a.register);
 /** "Schwab (Alex) ··1234": where an account lives, with the connection label when one bank has several logins. */
 export const where = (a: Account) => `${a.institution}${a.multiple_connections && a.connection ? ` (${a.connection})` : ""}${a.mask ? ` ··${a.mask}` : ""}`;
 
+/** "5 min ago", "3 h ago", "2 d ago"; a future time (e.g. consent expiry) reads "in 30 d". */
 export function ago(iso: string) {
-  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  const diff = Math.round((Date.now() - new Date(iso).getTime()) / 60000), m = Math.abs(diff);
   if (m < 2) return "just now";
-  if (m < 120) return m + " min ago";
-  const h = Math.round(m / 60);
-  return h < 48 ? h + " h ago" : Math.round(h / 24) + " d ago";
+  const h = Math.round(m / 60), span = m < 120 ? m + " min" : h < 48 ? h + " h" : Math.round(h / 24) + " d";
+  return diff < 0 ? "in " + span : span + " ago";
 }
-export const dateTime = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleString() : "—";
+/** "Oct 27, 10:29 PM"; the year only when it isn't this year. */
+export const dateTime = (iso: string | null | undefined) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+    ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) });
+};
 export const shortDate = (iso: string | null | undefined) => iso ? new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—";
 /** A YYYY-MM-DD date (no time zone shift). */
 export const day = (d: string) => new Date(d + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });

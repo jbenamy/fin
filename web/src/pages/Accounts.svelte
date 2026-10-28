@@ -82,8 +82,12 @@
       {:else if owner}
         <header class="dhead">
           <Avatar name={owner} size={44} />
-          <div class="dt"><h1>{owner}</h1><p class="muted">{plural(mine.length, "account")} · {usd(sum(mine))}</p></div>
+          <div class="dt"><h1>{owner}</h1><p class="muted">{plural(mine.length, "account")}</p></div>
         </header>
+        <div class="balance card">
+          <div><div class="bl">Total</div><div class="bv num" class:neg={sum(mine) < 0}>{usd(sum(mine))}</div></div>
+          <div class="asof muted small">As of {dateTime(mine.map((a) => a.updated_at).filter(Boolean).sort().pop())}</div>
+        </div>
       {/if}
 
       {#each errors as e (e)}<p class="err">{e}</p>{/each}

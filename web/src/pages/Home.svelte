@@ -58,7 +58,7 @@
       {#each tiles as t (t.label)}
         <div class="tile">
           <IconChip icon={t.icon} tone={t.tone} />
-          <div><div class="tl">{t.label}</div><div class="tv num">{usd0(sum(t.list))}</div><div class="ts">{plural(t.list.length, "account")}</div></div>
+          <div><div class="tl"><span class="dot {t.tone}" aria-hidden="true"></span>{t.label}</div><div class="tv num">{usd0(sum(t.list))}</div><div class="ts">{plural(t.list.length, "account")}</div></div>
         </div>
       {/each}
     </div>
@@ -111,7 +111,9 @@
   .seg.ok { background:var(--ok) } .seg.accent { background:var(--accent) }
   .tiles { display:grid; grid-template-columns:repeat(auto-fit, minmax(190px, 1fr)); gap:12px; margin-top:18px }
   .tile { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:10px; background:var(--surface-2); border:1px solid var(--line) }
-  .tl { color:var(--muted); font-size:12.5px } .tv { font-size:20px; font-weight:600 } .ts { color:var(--faint); font-size:12px }
+  .tl { color:var(--muted); font-size:12.5px }
+  .dot { display:none; width:8px; height:8px; border-radius:2px; margin-right:6px; vertical-align:1px }
+  .dot.ok { background:var(--ok) } .dot.accent { background:var(--accent) } .dot.bad { background:var(--bad) } .tv { font-size:20px; font-weight:600 } .ts { color:var(--faint); font-size:12px }
 
   .toolbar { display:flex; justify-content:space-between; align-items:center; gap:12px 20px; flex-wrap:wrap; margin:0 0 8px }
   .filters { display:flex; gap:6px; flex-wrap:wrap }
@@ -135,5 +137,10 @@
   .w { color:var(--muted); font-size:12px; line-height:1.4; min-height:2.8em; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2; overflow:hidden }
   .aval { font-size:24px; font-weight:600; margin-top:auto; padding-top:14px; letter-spacing:-.01em }
   .afoot { color:var(--muted); font-size:12px; line-height:1.4; min-height:1.4em }
-  @media (max-width:560px) { .value { font-size:34px } .toggle { margin-left:0 } }
+  @media (max-width:560px) {
+    .hero { padding:18px } .value { font-size:34px } .toggle { margin-left:0 }
+    /* Three compact tiles in a row instead of a tall stack; the bar above keeps the colors. */
+    .tiles { grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; margin-top:14px }
+    .tile { padding:10px; gap:0 } .tile :global(.chip) { display:none } .dot { display:inline-block } .tl { font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis } /* the dot keys the bar now the icon is gone */ .tv { font-size:15px } .ts { display:none }
+  }
 </style>

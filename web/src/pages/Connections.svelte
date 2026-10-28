@@ -1,6 +1,6 @@
 <!-- /connections: linked banks grouped by institution, with health, per-account owner and visibility, duplicates, rename and unlink. -->
 <script lang="ts">
-  import { Copy, Pencil, Plug, RefreshCw, Unlink } from "@lucide/svelte";
+  import { CircleX, Copy, Pencil, Plug, RefreshCw, Unlink } from "@lucide/svelte";
   import Avatar from "../components/Avatar.svelte";
   import Dialog from "../components/Dialog.svelte";
   import Empty from "../components/Empty.svelte";
@@ -9,7 +9,7 @@
   import Switch from "../components/Switch.svelte";
   import { api, message } from "../lib/api";
   import { changed, data, updateAccount } from "../lib/data.svelte";
-  import { ago, byName, cmp, groupBy, ownerList, plural, usd } from "../lib/format";
+  import { ago, byName, cmp, dateTime, groupBy, ownerList, plural, shortDate, usd } from "../lib/format";
   import { startLink } from "../lib/link.svelte";
   import type { Account, Duplicates, Item } from "../lib/types";
 
@@ -78,11 +78,19 @@
     unlinkBusy = false;
   }
 
+  // What's wrong with a connection, as [headline, detail] pairs: a plain-language headline over the raw message.
+  const problems = (i: Item) => ([
+    ["Last sync failed", i.last_error],
+    ["Plaid reports a problem with this login", i.plaid?.error],
+    ["Plaid's last transactions update failed", failedAfterSuccess(i) ? when(i.plaid?.transactions_last_failure) : null],
+    ["Couldn't get this connection's status from Plaid", i.plaid_error],
+  ] as [string, string | null | undefined][]).filter((p): p is [string, string] => !!p[1]);
+
   async function refresh() { refreshing = true; await load(true); refreshing = false; }
-  const when = (iso: string | null | undefined) => iso ? `${new Date(iso).toLocaleString()} (${ago(iso)})` : "—";
+  const when = (iso: string | null | undefined) => iso ? `${dateTime(iso)} (${ago(iso)})` : "—";
 </script>
 
-<PageHeader title="Connections" subtitle={loaded ? `${plural(items.length, "linked connection")}${fetched ? " · Plaid status as of " + new Date(fetched).toLocaleTimeString() : ""}` : "Loading…"}>
+<PageHeader title="Connections" subtitle={loaded ? `${plural(items.length, "linked connection")}${fetched ? " · Plaid status as of " + new Date(fetched).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }) : ""}` : "Loading…"}>
   {#snippet actions()}
     <button class="ghost" onclick={refresh} disabled={refreshing} title="Ask Plaid for fresh connection status"><RefreshCw size={15} class={refreshing ? "spin" : ""} aria-hidden="true" />Refresh from Plaid</button>
   {/snippet}
@@ -126,7 +134,7 @@
     <div class="ihead">
       <Avatar name={inst.name} size={36} square />
       <div class="it"><h2>{inst.name}</h2><span class="muted small">{plural(inst.list.length, "connection")} · {plural(inst.list.reduce((n, i) => n + i.accounts.length, 0), "account")}</span></div>
-      <Pill {tone} {label} />
+      {#if inst.list.length > 1}<Pill {tone} {label} />{/if}<!-- one connection: its own pill says it -->
     </div>
     {#each inst.list as i (i.item_id)}
       {@const [t, l] = health(i)}
@@ -135,38 +143,37 @@
           <h3>{i.label}</h3>
           <Pill tone={t} label={l} />
           <span class="spacer"></span>
-          <button class="quiet sm" onclick={() => { renaming = i; nickname = i.nickname ?? ""; renameOpen = true; }}><Pencil size={14} aria-hidden="true" />Rename</button>
-          <button class="quiet danger sm" onclick={() => { unlinking = i; unlinkErr = ""; unlinkOpen = true; }}><Unlink size={14} aria-hidden="true" />Unlink</button>
+          <button class="quiet sm" onclick={() => { renaming = i; nickname = i.nickname ?? ""; renameOpen = true; }}><Pencil size={14} aria-hidden="true" /><span class="lbl">Rename</span></button>
+          <button class="quiet danger sm" onclick={() => { unlinking = i; unlinkErr = ""; unlinkOpen = true; }}><Unlink size={14} aria-hidden="true" /><span class="lbl">Unlink</span></button>
         </div>
         <dl>
-          <dt>Connection</dt><dd>{i.suffix ? "…" + i.suffix : ""}{i.owners.length ? ` · ${[...i.owners].sort(cmp).join(", ")}` : ""}{i.created_at ? ` · linked ${new Date(i.created_at).toLocaleDateString()}` : ""}</dd>
+          <dt>Connection</dt><dd>{i.suffix ? "…" + i.suffix : ""}{i.owners.length ? ` · ${[...i.owners].sort(cmp).join(", ")}` : ""}{i.created_at ? ` · linked ${shortDate(i.created_at)}` : ""}</dd>
           <dt>Last sync (this app)</dt><dd>{when(i.last_synced)}</dd>
           {#if i.plaid}<dt>Transactions updated (Plaid)</dt><dd>{when(i.plaid.transactions_last_success)}</dd>{/if}
           {#if i.plaid?.investments_last_success}<dt>Investments updated (Plaid)</dt><dd>{when(i.plaid.investments_last_success)}</dd>{/if}
           {#if i.plaid?.consent_expiration_time}<dt>Consent expires</dt><dd>{when(i.plaid.consent_expiration_time)}</dd>{/if}
           {#if i.plaid}<dt>Products</dt><dd>{(i.plaid.consented_products || []).join(", ") || "—"}</dd>{/if}
         </dl>
-        {#if i.last_error}<p class="err">Sync error: {i.last_error}</p>{/if}
-        {#if i.plaid?.error}<p class="err">Plaid item error: {i.plaid.error}</p>{/if}
-        {#if failedAfterSuccess(i)}<p class="err">Last transactions update failed {when(i.plaid?.transactions_last_failure)}</p>{/if}
-        {#if i.plaid_error}<p class="err">Could not reach Plaid for this item: {i.plaid_error}</p>{/if}
-        <div class="scroll-x"><table class="data">
-          <thead><tr><th>Show</th><th>Account</th><th>Owner</th><th>Type</th><th class="num">Balance</th><th>Balance as of</th></tr></thead>
+        {#each problems(i) as [title, detail] (title)}
+          <div class="alert"><CircleX size={16} aria-hidden="true" /><div><b>{title}</b><span>{detail}</span></div></div>
+        {/each}
+        <div class="scroll-x"><table class="data accts">
+          <thead><tr><th>Show</th><th>Account</th><th>Owner</th><th>Type</th><th class="num">Balance</th><th>Updated</th></tr></thead>
           <tbody>
             {#each [...i.accounts].sort(byName) as a (a.account_id)}
               <tr class:off={a.hidden}>
-                <td><Switch checked={!a.hidden} label={`Show ${a.name}`} onchange={(v) => setShown(a, v)} /></td>
-                <td class="dim">{a.name}{a.mask ? " ··" + a.mask : ""}{#if a.hidden}<small>Hidden</small>{/if}</td>
-                <td>
+                <td class="show"><Switch checked={!a.hidden} label={`Show ${a.name}`} onchange={(v) => setShown(a, v)} /></td>
+                <td class="dim aname">{a.name}{a.mask ? " ··" + a.mask : ""}{#if a.hidden}<small>Hidden</small>{/if}</td>
+                <td class="owner">
                   <select class="ownersel" aria-label={`Owner of ${a.name}`} value={a.owner_override ?? ""} onchange={(e) => pickOwner(a, e.currentTarget)}>
                     <option value="">Detected: {a.owner_detected ?? "none"}</option>
                     {#each ownerOptions(a) as o (o)}<option value={o}>{o}</option>{/each}
                     <option value="__new__">New owner…</option>
                   </select>
                 </td>
-                <td class="dim">{a.group}</td>
-                <td class="num dim">{usd(a.balance, a.currency)}</td>
-                <td class="dim muted">{when(a.updated_at)}</td>
+                <td class="dim type">{a.group}</td>
+                <td class="num dim bal">{usd(a.balance, a.currency)}</td>
+                <td class="dim muted upd" title={dateTime(a.updated_at)}>{a.updated_at ? ago(a.updated_at) : "—"}</td>
               </tr>
             {/each}
           </tbody>
@@ -204,8 +211,30 @@
   .conn { padding:16px 18px 6px; margin-bottom:12px }
   .chead { display:flex; align-items:center; gap:8px; flex-wrap:wrap } .chead h3 { font-size:15px } .spacer { flex:1 }
   dl { display:grid; grid-template-columns:max-content 1fr; gap:4px 18px; margin:12px 0 4px; font-size:13px } dt { color:var(--muted) } dd { margin:0; overflow-wrap:anywhere }
-  .conn table { margin-top:10px } .conn .err { margin:6px 0 0 }
+  .conn table { margin-top:10px }
+  .alert { display:flex; gap:10px; align-items:flex-start; margin:10px 0 0; padding:10px 12px; border-radius:var(--radius-sm); background:var(--bad-soft); color:var(--bad); font-size:13px }
+  .alert :global(svg) { flex:none; margin-top:1px } .alert b { display:block; font-weight:600 }
+  .alert span { display:block; color:var(--muted); font-size:12.5px; overflow-wrap:anywhere }
   tr.off .dim { opacity:.45 }
+  .aname { white-space:nowrap }
   .ownersel { font-size:13px; max-width:240px; min-width:170px; padding:5px 8px }
-  @media (max-width:560px) { dl { grid-template-columns:1fr; gap:0 } dd { margin-bottom:6px } }
+  /* When the card is too narrow for the table (phones, or a laptop-width window), each account row becomes a small
+     card instead of a table that scrolls sideways: switch · name · balance / owner picker / type · updated. */
+  .conn { container-type:inline-size }
+  @container (max-width: 700px) {
+    .accts thead { display:none }
+    .accts tr { display:grid; grid-template-columns:auto minmax(0, 1fr) auto; grid-template-areas:"show name bal" ". owner owner" ". type upd";
+      gap:6px 12px; align-items:center; padding:12px 0; border-bottom:1px solid var(--line) }
+    .accts tbody tr:last-child { border-bottom:0 }
+    .accts td, .accts tbody tr:hover td { padding:0; border:0; background:none }
+    .accts .show { grid-area:show } .accts .bal { grid-area:bal; font-weight:600 } .accts .owner { grid-area:owner }
+    .accts .aname { grid-area:name; white-space:normal; overflow-wrap:anywhere; font-weight:500 }
+    .accts .type { grid-area:type; color:var(--muted); font-size:12.5px } .accts .upd { grid-area:upd; text-align:right; font-size:12.5px }
+    .ownersel { width:100%; max-width:340px; min-width:0 }
+  }
+  @media (max-width:560px) {
+    dl { grid-template-columns:1fr; gap:0 } dd { margin-bottom:6px }
+    /* Icon-only actions so the name, pill and actions share one line. */
+    .lbl { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%) } .chead button { padding:6px }
+  }
 </style>

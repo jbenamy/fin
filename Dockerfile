@@ -1,4 +1,4 @@
-FROM 1password/op:2.40.0 AS op
+FROM 1password/op:2.42.0 AS op
 
 FROM node:24.22.1-slim AS build
 WORKDIR /app
@@ -22,6 +22,8 @@ COPY package.json ./
 COPY --from=op /usr/local/bin/op /usr/local/bin/op
 COPY --from=op /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --chmod=755 fin-entrypoint.sh /usr/local/bin/
+# Nothing at runtime uses npm or corepack; removing them also removes their bundled dependencies' advisories
+RUN rm -rf /usr/local/lib/node_modules /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /opt/yarn-* /usr/local/bin/yarn /usr/local/bin/yarnpkg
 RUN mkdir /data && chown node:node /data
 USER node
 VOLUME /data

@@ -70,7 +70,7 @@ within 1Password's rate limits) if a reference can't be read. Without 1Password,
 ```
 docker compose up -d --build     # the app listens on 3000 inside the container
 pnpm install && pnpm build       # build the web app into dist/web (the server serves it)
-pnpm dev                         # local server (Node >= 22.9); pnpm dev:web alongside it for live reload on :5173
+pnpm dev                         # local server (Node >= 26); pnpm dev:web alongside it for live reload on :5173
 pnpm test                        # unit + API tests
 pnpm typecheck
 ```

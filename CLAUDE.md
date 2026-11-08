@@ -1,11 +1,11 @@
 # Fin
 
-Read-only family dashboard of bank balances and transactions, backed by Plaid. Node 22.9+/TypeScript server (Express 5,
+Read-only family dashboard of bank balances and transactions, backed by Plaid. Node 26+/TypeScript server (Express 5,
 SQLite via `better-sqlite3-multiple-ciphers`), a Svelte 5 + Vite single-page app in `web/` (its own pnpm workspace package). See `README.md` for user-facing docs.
 
 ## Commands
 ```
-pnpm dev          # tsx server with .env (Node >= 22.9); serves the last `pnpm build` of the web app
+pnpm dev          # tsx server with .env (Node >= 26); serves the last `pnpm build` of the web app
 pnpm dev:web      # Vite on :5173 with live reload, /api proxied to pnpm dev
 pnpm test         # node:test: logic, API (temp DB), auth (software passkey in test/webauthn.ts), sync with Plaid stubbed
 pnpm typecheck    # server (tsconfig.json, strict + noUnused*) AND web (svelte-check --fail-on-warnings, strict)

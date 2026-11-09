@@ -5,6 +5,9 @@
 Add an investment holdings table, allocation summary, and daily balance/holdings snapshots to the existing family
 dashboard (Fin), using /investments/holdings/get. (workflow_id: wf_45b4e4fe445b3480)
 
+Then (2026-11-08): migrate from plaid-node 47 (`PlaidApi`) to the new `PlaidClient` SDK in plaid 51 with no change
+in behavior; products confirmed unchanged by the developer. (workflow_id: wf_42822d64963fcb97)
+
 ## Scope
 
 - Products:
@@ -25,6 +28,7 @@ dashboard (Fin), using /investments/holdings/get. (workflow_id: wf_45b4e4fe445b3
 |------|----------------|-------|-------|
 | Investments enabled for US Production | holdings calls fail without it | https://dashboard.plaid.com/settings/team/products | verified (2026-10-23) |
 | OAuth redirect URI registered | OAuth banks in Link | https://dashboard.plaid.com/developers/api | verified (2026-10-23) |
+| Live check of the SDK 51 migration | only stubbed tests ran | Sync now + Connect bank after deploy | needs_human |
 | Webhooks | not used: a daily cron syncs instead (INV-006 refresh cadence is daily-ish) | n/a | not_applicable |
 
 ## Implementation checklist
@@ -38,6 +42,13 @@ dashboard (Fin), using /investments/holdings/get. (workflow_id: wf_45b4e4fe445b3
 - [x] Account page: allocation bar + legend, holdings table with stale-price flag (`public/js/holdings.js`)
 - [x] Unlink deletes holdings and history
 - [x] Link: investments moved to `additional_consented_products` (INV-015)
+- [x] SDK 51 (2026-11-08): one `PlaidClient` in `src/plaid.ts` with the environment mapped explicitly from
+      `PLAID_ENV` (production | sandbox, anything else fails at startup) and keys from PLAID_CLIENT_ID/PLAID_SECRET
+      (GUIDE-004, WEB-005); `plaidError()` reads the typed `PlaidError.body`, callers branch on error_code only
+      (ITEM-002); logged bodies carry request_id, and the new errors no longer carry the secret header (GUIDE-006);
+      /transactions/sync keeps its cursor loop (TXN-002, TXN-007); /investments/transactions/get keeps an explicit
+      offset loop to total_investment_transactions rather than the SDK's page iterator, which stops at the first
+      short page (INV-005, DATA-007).
 - [ ] Later: value-over-time chart from the history tables; owner/family-wide allocation
 
 ## Acceptance
@@ -46,6 +57,10 @@ dashboard (Fin), using /investments/holdings/get. (workflow_id: wf_45b4e4fe445b3
   - CHECK-004: no Reconnect (update mode) for ITEM_LOGIN_REQUIRED; update mode is not used (it was only for Identity consent, now removed).
   - CHECK-008: not run against Plaid Sandbox (Plaid stubbed in tests; UI checked on a seeded DB).
   - CHECK-014: freshness comes from the daily cron + Sync now, not HOLDINGS / SYNC_UPDATES_AVAILABLE webhooks.
+
+- Round 0 of the SDK 51 migration (2026-11-08): FAIL on CHECK-004 and CHECK-014 (same pre-existing design as
+  above), CHECK-008 (no sandbox keys on the dev machine; stubbed tests and a local boot only) and CHECK-015 (no
+  live persona yet). Verify with a post-deploy Sync now and Connect bank.
 
 ## Maintenance
 

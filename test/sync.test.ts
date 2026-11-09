@@ -5,25 +5,35 @@ import { useTempDb } from "./helpers.js";
 useTempDb();
 const { db } = await import("../src/db.js");
 const { plaid } = await import("../src/plaid.js");
+const { PlaidError } = await import("plaid");
 const { syncItem } = await import("../src/sync.js");
 const { getPlaidStatus, invalidatePlaidStatus } = await import("../src/plaidStatus.js");
 
-const stub = (name: string, fn: (...a: any[]) => unknown) => { (plaid as any)[name] = async (...a: any[]) => ({ data: await fn(...a) }); };
-/** A Plaid call that fails the way the SDK does: the error body on `response.data`. */
-const plaidFailure = (error_code: string, error_message?: string) => async () => {
-  throw Object.assign(new Error("x"), { response: { data: { error_code, error_message } } });
+/** Replace one SDK method ("accounts.get") with fn's result: the body, or for a paginated method ("page"), a page of it. */
+const stub = (name: string, fn: (...a: any[]) => unknown, page = false) => {
+  const [group, method] = name.split(".");
+  (plaid as any)[group!][method!] = async (...a: any[]) => {
+    const body = await fn(...a);
+    return page ? { response: body } : body;
+  };
+};
+const stubPage = (name: string, fn: (...a: any[]) => unknown) => stub(name, fn, true);
+const fail = (name: string, f: () => Promise<never>) => { const [group, method] = name.split("."); (plaid as any)[group!][method!] = f; };
+/** A Plaid call that fails the way the SDK does: a PlaidError carrying Plaid's error body. */
+const plaidFailure = (error_code: string, error_message?: string) => async (): Promise<never> => {
+  throw new PlaidError({ statusCode: 400, body: { error_type: "API_ERROR", error_code, error_message, request_id: "r1" } });
 };
 // Default: no holdings. Tests that care about holdings replace this stub.
-stub("investmentsHoldingsGet", () => ({ holdings: [], securities: [] }));
+stub("investments.getHoldings", () => ({ holdings: [], securities: [] }));
 const tx = (id: string, account: string) => ({ transaction_id: id, account_id: account, date: "2026-10-01", name: "x", merchant_name: null, amount: 5, pending: false });
 
 test("sync stores balances and cash transactions, skips brokerage transactions", async () => {
   db.exec(`INSERT INTO items (item_id, access_token, institution) VALUES ('i1','tok','Charles Schwab')`);
-  stub("accountsGet", () => ({ accounts: [
+  stub("accounts.get", () => ({ accounts: [
     { account_id: "cash", name: "Checking", mask: "1", type: "depository", subtype: "checking", balances: { current: 10, available: 9, iso_currency_code: "USD" } },
     { account_id: "brk", name: "Brokerage", mask: "2", type: "investment", subtype: "brokerage", balances: { current: 500, available: null, iso_currency_code: "USD" } },
   ] }));
-  stub("transactionsSync", () => ({ added: [tx("t1", "cash"), tx("t2", "brk")], modified: [], removed: [], has_more: false, next_cursor: "c1" }));
+  stub("transactions.sync", () => ({ added: [tx("t1", "cash"), tx("t2", "brk")], modified: [], removed: [], has_more: false, next_cursor: "c1" }));
 
   const result = await syncItem({ item_id: "i1", access_token: "tok", cursor: null });
 
@@ -42,7 +52,7 @@ test("a manual owner override survives later syncs", async () => {
 });
 
 test("a Plaid failure is recorded on the item instead of throwing", async () => {
-  (plaid as any).accountsGet = plaidFailure("ITEM_LOGIN_REQUIRED", "login required");
+  fail("accounts.get", plaidFailure("ITEM_LOGIN_REQUIRED", "login required"));
   const result = await syncItem({ item_id: "i1", access_token: "tok", cursor: null });
   assert.equal(result.ok, false);
   assert.match(result.error!, /ITEM_LOGIN_REQUIRED/);
@@ -51,7 +61,7 @@ test("a Plaid failure is recorded on the item instead of throwing", async () => 
 
 test("Plaid item status is cached, refreshable, and invalidated", async () => {
   let calls = 0;
-  stub("itemGet", () => { calls++; return { item: { error: null, consented_products: [] }, status: null }; });
+  stub("item.get", () => { calls++; return { item: { error: null, consented_products: [] }, status: null }; });
   invalidatePlaidStatus("i9");
   await getPlaidStatus("i9", "tok");
   await getPlaidStatus("i9", "tok");
@@ -61,7 +71,7 @@ test("Plaid item status is cached, refreshable, and invalidated", async () => {
   invalidatePlaidStatus("i9");
   await getPlaidStatus("i9", "tok");
   assert.equal(calls, 3);                       // invalidation drops it
-  (plaid as any).itemGet = plaidFailure("RATE_LIMIT");
+  fail("item.get", plaidFailure("RATE_LIMIT"));
   invalidatePlaidStatus("i9");
   const failed = await getPlaidStatus("i9", "tok");
   assert.deepEqual([failed.info, failed.error], [null, "RATE_LIMIT"]);
@@ -72,14 +82,14 @@ const invTx = (id: string, account: string, date = "2026-10-01") =>
 
 test("cash management accounts get a register from Investments; plain brokerage stays balance-only", async () => {
   db.exec(`INSERT INTO items (item_id, access_token, institution) VALUES ('i2','tok2','Charles Schwab')`);
-  stub("accountsGet", () => ({ accounts: [
+  stub("accounts.get", () => ({ accounts: [
     { account_id: "cma", name: "Cash Management", mask: "3", type: "investment", subtype: "cash management", balances: { current: 50, available: 50, iso_currency_code: "USD" } },
     { account_id: "brk2", name: "Brokerage", mask: "4", type: "investment", subtype: "brokerage", balances: { current: 900, available: null, iso_currency_code: "USD" } },
   ] }));
-  stub("transactionsSync", () => { throw new Error("transactionsSync should not run for investment-only items"); });
+  stub("transactions.sync", () => { throw new Error("transactionsSync should not run for investment-only items"); });
   const calls: any[] = [];
   let pages = [[invTx("v1", "cma"), invTx("v2", "cma")], [invTx("v3", "cma")]];
-  stub("investmentsTransactionsGet", (req: any) => {
+  stubPage("investments.getTransactions", (req: any) => {
     calls.push(req);
     const page = pages[req.options.offset === 0 ? 0 : 1];
     return { investment_transactions: page, total_investment_transactions: 3 };
@@ -98,7 +108,7 @@ test("cash management accounts get a register from Investments; plain brokerage 
   calls.length = 0;
   db.prepare("UPDATE transactions SET date = ? WHERE transaction_id IN ('v1','v2','v3')").run(synced);
   pages = [[invTx("v1", "cma", synced)], []];
-  stub("investmentsTransactionsGet", (req: any) => { calls.push(req); return { investment_transactions: pages[0], total_investment_transactions: 1 }; });
+  stubPage("investments.getTransactions", (req: any) => { calls.push(req); return { investment_transactions: pages[0], total_investment_transactions: 1 }; });
   const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.deepEqual([r2.added, r2.removed], [0, 2]);
   assert.equal(calls[0].start_date, new Date(Date.parse(synced) - 30 * 86_400_000).toISOString().slice(0, 10));
@@ -109,25 +119,25 @@ test("a brokerage account switched on manually gets a register; PRODUCT_NOT_READ
   db.prepare("UPDATE accounts SET register_override = 1 WHERE account_id = 'brk2'").run();
   db.prepare("UPDATE accounts SET register_override = 0 WHERE account_id = 'cma'").run();
   const seen: string[][] = [];
-  stub("investmentsTransactionsGet", (req: any) => { seen.push(req.options.account_ids); return { investment_transactions: [invTx("v9", "brk2")], total_investment_transactions: 1 }; });
+  stubPage("investments.getTransactions", (req: any) => { seen.push(req.options.account_ids); return { investment_transactions: [invTx("v9", "brk2")], total_investment_transactions: 1 }; });
   const r = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.equal(r.ok, true);
   assert.deepEqual(seen, [["brk2"]]);
   assert.deepEqual([r.registerAccounts, r.balanceOnlyAccounts], [1, 1]);
 
-  (plaid as any).investmentsTransactionsGet = plaidFailure("PRODUCT_NOT_READY");
+  fail("investments.getTransactions", plaidFailure("PRODUCT_NOT_READY"));
   const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.equal(r2.ok, true);
 });
 
 test("holdings: stored per account with the fresher price, lots added up, snapshots recorded, kept when unavailable", async () => {
   db.exec(`INSERT INTO items (item_id, access_token, institution) VALUES ('i3','tok3','Fidelity')`);
-  stub("accountsGet", () => ({ accounts: [
+  stub("accounts.get", () => ({ accounts: [
     { account_id: "ira", name: "IRA", mask: "5", type: "investment", subtype: "ira", balances: { current: 3000, available: null, iso_currency_code: "USD" } },
   ] }));
   const holding = (security_id: string, quantity: number, price: number, cost_basis: number | null, asOf = "2026-10-20") =>
     ({ account_id: "ira", security_id, quantity, institution_price: price, institution_price_as_of: asOf, institution_value: quantity * price, cost_basis, iso_currency_code: "USD" });
-  stub("investmentsHoldingsGet", () => ({
+  stub("investments.getHoldings", () => ({
     holdings: [holding("vti", 10, 200, 1500), holding("vti", 2, 200, 300), holding("mmf", 500, 1, 500, "2026-10-01"), holding("old", 1, 50, null, "2026-10-01")],
     securities: [
       { security_id: "vti", name: "Vanguard Total Stock Market ETF", ticker_symbol: "VTI", type: "etf", close_price: 199, close_price_as_of: "2026-10-19" },
@@ -151,24 +161,24 @@ test("holdings: stored per account with the fresher price, lots added up, snapsh
   assert.equal((db.prepare("SELECT value FROM holding_history WHERE account_id = 'ira' AND security_id = 'vti'").get() as any).value, 2400);
 
   // Holdings not available (still loading, no consent...) keep what was stored and don't fail the sync.
-  (plaid as any).investmentsHoldingsGet = plaidFailure("PRODUCT_NOT_READY");
+  fail("investments.getHoldings", plaidFailure("PRODUCT_NOT_READY"));
   const r2 = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null });
   assert.deepEqual([r2.ok, r2.holdings], [true, 0]);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM holdings WHERE account_id = 'ira'").get() as any).n, 3);
 
   // Any other Plaid error fails the sync like other phases do.
-  (plaid as any).investmentsHoldingsGet = plaidFailure("INTERNAL_SERVER_ERROR");
+  fail("investments.getHoldings", plaidFailure("INTERNAL_SERVER_ERROR"));
   const r3 = await syncItem({ item_id: "i3", access_token: "tok3", cursor: null });
   assert.equal(r3.ok, false);
   assert.match(r3.error!, /INTERNAL_SERVER_ERROR/);
 });
 
 test("items without investment accounts never call the holdings endpoint", async () => {
-  stub("accountsGet", () => ({ accounts: [
+  stub("accounts.get", () => ({ accounts: [
     { account_id: "cash", name: "Checking", mask: "1", type: "depository", subtype: "checking", balances: { current: 10, available: 9, iso_currency_code: "USD" } },
   ] }));
-  stub("transactionsSync", () => ({ added: [], modified: [], removed: [], has_more: false, next_cursor: "c2" }));
-  (plaid as any).investmentsHoldingsGet = async () => { throw new Error("should not be called"); };
+  stub("transactions.sync", () => ({ added: [], modified: [], removed: [], has_more: false, next_cursor: "c2" }));
+  fail("investments.getHoldings", async () => { throw new Error("should not be called"); });
   const r = await syncItem({ item_id: "i1", access_token: "tok", cursor: "c1" });
   assert.equal(r.ok, true);
 });

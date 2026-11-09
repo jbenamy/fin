@@ -140,8 +140,11 @@ test("clean URLs: every page serves the app; .html addresses redirect and keep t
 
 test("errors answer JSON: Plaid's message with 500, malformed JSON with 400, other exceptions without detail", async () => {
   const { plaid } = await import("../src/plaid.js");
-  const original = plaid.linkTokenCreate;
-  (plaid as any).linkTokenCreate = async () => { throw Object.assign(new Error("x"), { response: { data: { error_code: "INVALID_FIELD", error_message: "bad field" } } }); };
+  const { PlaidError } = await import("plaid");
+  const original = plaid.link.createToken;
+  (plaid.link as any).createToken = async () => {
+    throw new PlaidError({ statusCode: 400, body: { error_type: "INVALID_REQUEST", error_code: "INVALID_FIELD", error_message: "bad field", request_id: "r1" } });
+  };
   const err = console.error;
   console.error = () => {};
   try {
@@ -152,10 +155,10 @@ test("errors answer JSON: Plaid's message with 500, malformed JSON with 400, oth
     assert.equal(bad.status, 400);
     assert.ok((await bad.json()).error);
     // Anything else is logged but not echoed back.
-    (plaid as any).linkTokenCreate = async () => { throw new Error("SQLITE_IOERR /data/fin.db"); };
+    (plaid.link as any).createToken = async () => { throw new Error("SQLITE_IOERR /data/fin.db"); };
     const hidden = await fetch("/api/link-token", { method: "POST" });
     assert.deepEqual([hidden.status, await hidden.json()], [500, { error: "Internal server error" }]);
-  } finally { plaid.linkTokenCreate = original; console.error = err; }
+  } finally { plaid.link.createToken = original; console.error = err; }
 });
 
 test("holdings API: positions largest first, gain from cost basis, allocation in fixed class order", async () => {

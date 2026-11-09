@@ -18,7 +18,7 @@ export async function getPlaidStatus(itemId: string, accessToken: string, force 
   const hit = cache.get(itemId);
   if (!force && hit && Date.now() - hit.at < TTL_MS) return { info: hit.info, error: null };
   try {
-    const { data } = await plaid.itemGet({ access_token: accessToken });
+    const data = await plaid.item.get({ access_token: accessToken });
     const info: PlaidItemStatus = {
       error: data.item.error ? `${data.item.error.error_code}: ${data.item.error.error_message}` : null,
       consent_expiration_time: data.item.consent_expiration_time ?? null,

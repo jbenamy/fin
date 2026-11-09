@@ -1,4 +1,4 @@
-import type { Holding, InvestmentTransaction, RemovedTransaction, Security, Transaction } from "plaid";
+import type { Plaid } from "plaid";
 import { db, transaction } from "./db.js";
 import { invalidatePlaidStatus } from "./plaidStatus.js";
 import { plaid, plaidError } from "./plaid.js";
@@ -48,7 +48,7 @@ interface Registers {
 }
 
 async function syncBalances(item: SyncItem): Promise<{ registers: Registers; investmentAccounts: string[]; total: number }> {
-  const { data } = await plaid.accountsGet({ access_token: item.access_token });
+  const data = await plaid.accounts.get({ access_token: item.access_token });
   const now = new Date().toISOString(), today = isoDate(Date.now());
   transaction(() => {
     for (const a of data.accounts) {
@@ -73,12 +73,12 @@ async function syncBalances(item: SyncItem): Promise<{ registers: Registers; inv
 async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, onFetched: (n: number) => void) {
   const saved = item.cursor ?? undefined;
   for (;;) {
-    const added: Transaction[] = [], modified: Transaction[] = [];
-    const removed: RemovedTransaction[] = [];
+    const added: Plaid.Transaction[] = [], modified: Plaid.Transaction[] = [];
+    const removed: Plaid.RemovedTransaction[] = [];
     let next = saved, more = true;
     try {
       while (more) {
-        const { data } = await plaid.transactionsSync({ access_token: item.access_token, cursor: next, count: 500 });
+        const data = await plaid.transactions.sync({ access_token: item.access_token, cursor: next, count: 500 });
         added.push(...data.added); modified.push(...data.modified); removed.push(...data.removed);
         more = data.has_more; next = data.next_cursor;
         onFetched(added.length + modified.length + removed.length);
@@ -88,7 +88,7 @@ async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, o
       if (plaidError(e)?.error_code === "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") continue;
       throw e;
     }
-    const keep = (t: Transaction) => registerAccounts.has(t.account_id);
+    const keep = (t: Plaid.Transaction) => registerAccounts.has(t.account_id);
     transaction(() => {
       for (const t of [...added, ...modified]) {
         if (!keep(t)) continue;
@@ -113,17 +113,19 @@ async function syncInvestmentTransactions(item: SyncItem, accounts: Registers["i
   const now = Date.now(), end = isoDate(now);
   const start = isoDate(Math.min(...accounts.map((a) => a.inv_tx_synced ? Date.parse(a.inv_tx_synced) - 30 * DAY : now - 730 * DAY)));
   const ids = accounts.map((a) => a.account_id);
-  const fetched: InvestmentTransaction[] = [];
+  const fetched: Plaid.InvestmentTransaction[] = [];
   try {
+    // Offset pages until total_investment_transactions is reached. Not the SDK's page iterator: it stops at the
+    // first page shorter than count, and Plaid can return a short page before the end.
     for (let total = Infinity; fetched.length < total;) {
-      const { data } = await plaid.investmentsTransactionsGet({
+      const { response } = await plaid.investments.getTransactions({
         access_token: item.access_token, start_date: start, end_date: end,
         options: { account_ids: ids, count: 500, offset: fetched.length },
       });
-      fetched.push(...data.investment_transactions);
-      total = data.total_investment_transactions;
+      fetched.push(...response.investment_transactions);
+      total = response.total_investment_transactions;
       onFetched(fetched.length);
-      if (data.investment_transactions.length === 0) break;
+      if (response.investment_transactions.length === 0) break;
     }
   } catch (e) {
     // Right after Link the investments data may still be loading; the next sync picks it up.
@@ -151,10 +153,10 @@ const HOLDINGS_UNAVAILABLE = new Set([
   "PRODUCT_NOT_READY", "PRODUCTS_NOT_SUPPORTED", "NO_INVESTMENT_ACCOUNTS", "ADDITIONAL_CONSENT_REQUIRED", "INVALID_PRODUCT", "CONSENT_NOT_GRANTED",
 ]);
 
-const isCash = (s: Security | undefined) => !!s?.is_cash_equivalent || s?.type === "cash";
+const isCash = (s: Plaid.Security | undefined) => !!s?.is_cash_equivalent || s?.type === "cash";
 
 /** Price and value of a position: the broker's, unless the security's market close is more recent (cash is always the broker's). */
-function pricing(h: Holding, s: Security | undefined) {
+function pricing(h: Plaid.Holding, s: Plaid.Security | undefined) {
   const brokerAsOf = h.institution_price_as_of ?? h.institution_price_datetime?.slice(0, 10) ?? null;
   const close = s?.close_price, closeAsOf = s?.close_price_as_of ?? null;
   if (!isCash(s) && close != null && closeAsOf && (!brokerAsOf || closeAsOf > brokerAsOf)) {
@@ -169,9 +171,9 @@ function pricing(h: Holding, s: Security | undefined) {
  * (HOLDINGS_UNAVAILABLE) the previous holdings are kept and null is returned.
  */
 async function syncHoldings(item: SyncItem, accountIds: string[]): Promise<number | null> {
-  let holdings: Holding[], securities: Security[];
+  let holdings: Plaid.Holding[], securities: Plaid.Security[];
   try {
-    ({ data: { holdings, securities } } = await plaid.investmentsHoldingsGet({ access_token: item.access_token }));
+    ({ holdings, securities } = await plaid.investments.getHoldings({ access_token: item.access_token }));
   } catch (e) {
     if (HOLDINGS_UNAVAILABLE.has(plaidError(e)?.error_code ?? "")) return null;
     throw e;

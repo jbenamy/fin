@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { CountryCode, Products } from "plaid";
+import { Plaid } from "plaid";
 import { db } from "../db.js";
 import { plaid } from "../plaid.js";
 import { isSyncRunning, syncAll, syncItem } from "../sync.js";
@@ -7,27 +7,27 @@ import { isSyncRunning, syncAll, syncItem } from "../sync.js";
 export const link = Router();
 
 link.post("/api/link-token", async (_req, res) => {
-  const { data } = await plaid.linkTokenCreate({
+  const { link_token } = await plaid.link.createToken({
     user: { client_user_id: "owner" },
     client_name: "Fin",
-    country_codes: [CountryCode.Us],
+    country_codes: [Plaid.CountryCode.Us],
     language: "en",
     redirect_uri: process.env.PLAID_REDIRECT_URI || undefined,
-    products: [Products.Transactions],
+    products: [Plaid.Products.Transactions],
     // Consent now, billed only once /investments/* is first called: sync calls holdings only for Items that
     // actually have investment accounts, so bank-only logins aren't billed for Investments.
-    additional_consented_products: [Products.Investments],
+    additional_consented_products: [Plaid.Products.Investments],
     transactions: { days_requested: 730 },
   });
-  res.json({ link_token: data.link_token });
+  res.json({ link_token });
 });
 
 link.post("/api/exchange", async (req, res) => {
   const { public_token, institution } = req.body as { public_token: string; institution?: string };
-  const { data } = await plaid.itemPublicTokenExchange({ public_token });
+  const { item_id, access_token } = await plaid.item.exchangePublicToken({ public_token });
   db.prepare("INSERT OR REPLACE INTO items (item_id, access_token, institution, created_at) VALUES (?, ?, ?, ?)")
-    .run(data.item_id, data.access_token, institution ?? "Unknown", new Date().toISOString());
-  await syncItem({ item_id: data.item_id, access_token: data.access_token, cursor: null });
+    .run(item_id, access_token, institution ?? "Unknown", new Date().toISOString());
+  await syncItem({ item_id, access_token, cursor: null });
   res.json({ ok: true });
 });
 

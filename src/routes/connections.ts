@@ -65,7 +65,7 @@ connections.delete("/api/items/:id", async (req, res) => {
   const id = String(req.params.id);
   const item = db.prepare("SELECT access_token FROM items WHERE item_id = ?").get(id) as { access_token: string } | undefined;
   if (!item) return void res.status(404).json({ error: "unknown connection" });
-  try { await plaid.itemRemove({ access_token: item.access_token }); }
+  try { await plaid.item.remove({ access_token: item.access_token }); }
   catch (e) {
     // Already gone at Plaid's end: still clean up locally. Any other failure aborts so we never orphan a live token.
     const code = plaidError(e)?.error_code;

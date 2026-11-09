@@ -28,7 +28,7 @@ in behavior; products confirmed unchanged by the developer. (workflow_id: wf_428
 |------|----------------|-------|-------|
 | Investments enabled for US Production | holdings calls fail without it | https://dashboard.plaid.com/settings/team/products | verified (2026-10-23) |
 | OAuth redirect URI registered | OAuth banks in Link | https://dashboard.plaid.com/developers/api | verified (2026-10-23) |
-| Live check of the SDK 51 migration | only stubbed tests ran | Sync now + Connect bank after deploy | needs_human |
+| Live check of the SDK 51 migration | only stubbed tests ran | production, after deploy | verified (2026-11-08) |
 | Webhooks | not used: a daily cron syncs instead (INV-006 refresh cadence is daily-ish) | n/a | not_applicable |
 
 ## Implementation checklist
@@ -60,7 +60,10 @@ in behavior; products confirmed unchanged by the developer. (workflow_id: wf_428
 
 - Round 0 of the SDK 51 migration (2026-11-08): FAIL on CHECK-004 and CHECK-014 (same pre-existing design as
   above), CHECK-008 (no sandbox keys on the dev machine; stubbed tests and a local boot only) and CHECK-015 (no
-  live persona yet). Verify with a post-deploy Sync now and Connect bank.
+  live persona yet).
+- Round 1 (2026-11-08, after deploy): live in Production, link token created, /item/get ok and a full sync ok on all
+  10 Items (bank-only, brokerage-only with holdings, mixed). CHECK-015 passes; still FAIL on CHECK-004 and CHECK-014
+  (design, above) and CHECK-008 (Production, not Sandbox, and no new link/exchange exercised).
 
 ## Maintenance
 

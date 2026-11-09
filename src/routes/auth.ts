@@ -1,6 +1,6 @@
 import {
   generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse,
-  type AuthenticationResponseJSON, type AuthenticatorTransportFuture, type RegistrationResponseJSON,
+  type AuthenticationResponseJSON, type RegistrationResponseJSON,
 } from "@simplewebauthn/server";
 import { randomBytes } from "node:crypto";
 import { Router, type Request } from "express";
@@ -42,7 +42,7 @@ function take(response: { response?: { clientDataJSON?: string } }) {
 const passkeyCount = () => (db.prepare("SELECT COUNT(*) AS n FROM passkeys").get() as { n: number }).n;
 const validInvite = (token: unknown) => typeof token === "string" && !!db.prepare("SELECT 1 FROM invites WHERE token_hash = ? AND expires_at > ?")
   .get(hashToken(token), new Date().toISOString());
-const transports = (row: PasskeyRow) => (row.transports ? JSON.parse(row.transports) : undefined) as AuthenticatorTransportFuture[] | undefined;
+const transports = (row: PasskeyRow) => (row.transports ? JSON.parse(row.transports) : undefined) as string[] | undefined;
 
 // ---- public: status, sign in, sign out ----------------------------------------------------------------------------
 // `setup` = no passkey exists yet, so the first visitor may create one (the network is the only gate until then).

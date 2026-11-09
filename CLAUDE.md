@@ -11,7 +11,7 @@ pnpm test         # node:test: logic, API (temp DB), auth (software passkey in t
 pnpm typecheck    # server (tsconfig.json, strict + noUnused*) AND web (svelte-check --fail-on-warnings, strict)
 pnpm build        # vite build -> dist/web, then tsc -p tsconfig.build.json -> dist/ (tests excluded)
 ```
-Run `pnpm typecheck && pnpm test` before committing. pnpm 11: `pnpm-workspace.yaml` allow-lists esbuild's build script.
+Run `pnpm typecheck && pnpm test` before committing. pnpm 12: `pnpm-workspace.yaml` allow-lists esbuild's build script.
 
 ## Architecture
 - `src/app.ts` builds the Express app (`createApp()`, no listen/cron so tests can use it); `src/server.ts` adds the daily cron and listens.

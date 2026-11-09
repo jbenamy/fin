@@ -3,6 +3,7 @@
   import { loadAccounts } from "./lib/data.svelte";
   import { resumeOAuth } from "./lib/link.svelte";
   import { interceptLinks, route } from "./lib/router.svelte";
+  import About from "./pages/About.svelte";
   import Accounts from "./pages/Accounts.svelte";
   import Connections from "./pages/Connections.svelte";
   import Home from "./pages/Home.svelte";
@@ -13,6 +14,7 @@
   const PAGES = {
     "/": { title: "Overview", page: Home }, "/accounts": { title: "Accounts", page: Accounts },
     "/connections": { title: "Connections", page: Connections }, "/passkeys": { title: "Passkeys", page: Passkeys },
+    "/about": { title: "About", page: About },
   } as const;
   const current = $derived(PAGES[route.path as keyof typeof PAGES] ?? null);
   const isLogin = $derived(route.path === "/login");

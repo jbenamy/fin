@@ -9,8 +9,11 @@ RUN pnpm install --frozen-lockfile
 COPY tsconfig.json tsconfig.build.json ./
 COPY src ./src
 COPY web ./web
-# dist/ = the server (tsc) + dist/web, the Svelte app (Vite)
-RUN pnpm build && CI=true pnpm prune --prod
+COPY scripts ./scripts
+# The commit for the About page (there is no .git in the build context); the deploy passes it
+ARG FIN_COMMIT=
+# dist/ = the server (tsc) + dist/web, the Svelte app (Vite) + dist/build-info.json (versions, for the About page)
+RUN FIN_COMMIT=$FIN_COMMIT pnpm build && CI=true pnpm prune --prod
 
 FROM node:26.13.0-slim
 ENV NODE_ENV=production DATA_DIR=/data PORT=3000

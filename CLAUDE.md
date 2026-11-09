@@ -9,13 +9,14 @@ pnpm dev          # tsx server with .env (Node >= 26); serves the last `pnpm bui
 pnpm dev:web      # Vite on :5173 with live reload, /api proxied to pnpm dev
 pnpm test         # node:test: logic, API (temp DB), auth (software passkey in test/webauthn.ts), sync with Plaid stubbed
 pnpm typecheck    # server (tsconfig.json, strict + noUnused*) AND web (svelte-check --fail-on-warnings, strict)
-pnpm build        # vite build -> dist/web, then tsc -p tsconfig.build.json -> dist/ (tests excluded)
+pnpm build        # vite build -> dist/web, tsc -p tsconfig.build.json -> dist/ (tests excluded), then scripts/build-info.ts -> dist/build-info.json
 ```
 Run `pnpm typecheck && pnpm test` before committing. pnpm 12: `pnpm-workspace.yaml` allow-lists esbuild's build script.
 
 ## Architecture
 - `src/app.ts` builds the Express app (`createApp()`, no listen/cron so tests can use it); `src/server.ts` adds the daily cron and listens.
-- `src/routes/`: `auth` (passkey login, invites, passkey list/remove), `link` (Plaid Link token/exchange, SSE sync), `accounts`, `register` (transactions + payee search), `holdings` (an investment account's positions + allocation), `connections` (status, duplicates, rename, unlink).
+- `src/routes/`: `auth` (passkey login, invites, passkey list/remove), `link` (Plaid Link token/exchange, SSE sync), `accounts`, `register` (transactions + payee search), `holdings` (an investment account's positions + allocation), `connections` (status, duplicates, rename, unlink), `about` (versions: Fin's from `dist/build-info.json`, runtime ones live).
+- **About page versions**: `scripts/build-info.ts` (run by `pnpm build`, Node's type stripping) records `package.json` `version`, the commit (`FIN_COMMIT`, else git), pnpm and every direct dependency's installed version; dev dependencies are pruned from the image, so they're only knowable at build time. `src/paths.ts` locates it beside the web build.
 - **Passkey login guard** (`src/auth.ts`, `requireSession`): runs before static files and routers. Only `/healthz`, `/login`, the favicons (the `PUBLIC` set), `/assets/*` (the app bundle: the login page is the same app, and no data is in it), and `/api/auth/*` are open; pages redirect to `/login?next=...`, the API answers 401 (and `api()` sends the browser to `/login`). No user accounts: any registered passkey signs in. Sessions are 30-day sliding cookies (`fin_session`, sha256 stored in `sessions`). A new page address goes in `PAGES` (`src/app.ts`) and the router table in `web/src/App.svelte`.
 - Route errors: just throw (or reject). Express 5 forwards them to `jsonErrors` (`src/http.ts`, the last middleware), which logs and answers `{ error }` with Plaid's message or a client error's, never an unexpected exception's text; no per-route wrapper.
 - `src/sync.ts` per-connection sync: balances (`accountsGet`) -> transactions (`transactionsSync`, non-investment accounts) -> investment activity (`investmentsTransactionsGet`, only investment accounts with a register) -> holdings
@@ -32,7 +33,7 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 12: `pnpm-workspace.ya
   package's `exports` lacks types, hence `src/better-sqlite3-multiple-ciphers.d.ts`; it ships prebuilt binaries, so
   `allowBuilds` disables its node-gyp script.
 - Frontend (`web/src`): `App.svelte` routes by path (no router library: `lib/router.svelte.ts`, plain `<a href>` links are intercepted), `/login` renders bare and every other page inside `components/Shell.svelte` (nav rail; top bar + bottom tabs under 820px; global Sync now / Connect bank / sign out). Every page starts with `PageHeader` and uses the same content width (`--page-max`). Shared state in runes modules: `lib/data.svelte.ts` (accounts; `changed()` after any write, `data.version` for pages with their own fetches), `lib/sync.svelte.ts`, `lib/link.svelte.ts` (loads Plaid's script only when Link opens). Tokens and base styles in `app.css`; component styles stay in their `.svelte` file. Icons are `@lucide/svelte`; group icons map in `lib/icons.ts`. Dark theme only.
-- Clean URLs: `/`, `/accounts`, `/connections`, `/passkeys`, `/login` all serve `dist/web/index.html`; `*.html` 301-redirects. Always link to the clean form. The Accounts selection lives in the hash (`/accounts#<account id>` or `#o:<owner>`).
+- Clean URLs: `/`, `/accounts`, `/connections`, `/passkeys`, `/about`, `/login` all serve `dist/web/index.html`; `*.html` 301-redirects. Always link to the clean form. The Accounts selection lives in the hash (`/accounts#<account id>` or `#o:<owner>`).
 - `web/` pins TypeScript 6 because `svelte-check` needs TypeScript's JS API, which TypeScript 7 doesn't ship; the server stays on 7. Tests point `WEB_DIR` at a stub build (`test/helpers.ts`).
 
 ## Conventions
@@ -49,7 +50,7 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 12: `pnpm-workspace.ya
 
 ## Deployment
 - Host `user@your-host.example.com` (placeholder: the repo is public; the real host is the one in `~/.ssh/config`, user root, and is not recorded here), stack dir `/opt/stacks/fin`, compose project `fin`, DB bind-mounted from `/opt/stacks/fin/data` (`/data/fin.db` in the container) so the Kopia stack, which backs up `/opt/stacks`, includes it. Don't move it to a named volume: that silently drops it from backups (happened 2026-10-16 to 10-18). URL `https://fin.example.com` (internal, Twingate-only, via the shared Caddy docker-proxy on the external `apps` network; no published ports).
-- Deploy: rsync the repo (`--delete`, excluding `node_modules data dist .env .git test`), then `docker compose up -d --build` in `/opt/stacks/fin`. `.env` lives only on the VM (mode 600); never copy secrets into the repo.
+- Deploy: rsync the repo (`--delete`, excluding `node_modules data dist .env .git test`), then `FIN_COMMIT=<git rev-parse --short=10 HEAD> docker compose up -d --build` in `/opt/stacks/fin` (the build has no `.git`; the About page shows the commit). `.env` lives only on the VM (mode 600); never copy secrets into the repo.
 - Secrets: `.env` on the VM holds `op://<host vault>/fin/PLAID_...` references (one 1Password vault named after the host,
   one item per stack, fields named after the env vars); `fin-entrypoint.sh` resolves them with `op read` before
   exec'ing node, using the read-only service-account token at `/etc/op/token` (uid 1000, mode 400, outside the

@@ -1,11 +1,12 @@
 {
   "name": "fin",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "tsx --env-file-if-exists=.env src/server.ts",
     "dev:web": "pnpm -C web dev",
-    "build": "pnpm -C web build && tsc -p tsconfig.build.json",
+    "build": "pnpm -C web build && tsc -p tsconfig.build.json && node scripts/build-info.ts",
     "start": "node --env-file-if-exists=.env dist/server.js",
     "typecheck": "tsc --noEmit && pnpm -C web check",
     "test": "node --import tsx --test test/*.test.ts"

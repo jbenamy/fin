@@ -57,7 +57,7 @@ test("without a session: pages redirect to /login (keeping the address), the API
   for (const path of ["/login", "/assets/app.js", "/favicon.svg", "/healthz"]) {
     assert.equal((await b.fetch(path)).status, 200, path);
   }
-  for (const path of ["/accounts", "/connections", "/passkeys"]) assert.equal((await b.fetch(path)).status, 302, path);
+  for (const path of ["/accounts", "/connections", "/passkeys", "/about"]) assert.equal((await b.fetch(path)).status, 302, path);
 });
 
 test("first passkey: open setup while none exist, then closed; sign in, replay, logout", async () => {

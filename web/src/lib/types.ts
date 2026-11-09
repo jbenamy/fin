@@ -45,3 +45,10 @@ export interface Duplicates {
 }
 
 export interface Passkey { id: string; label: string; created_at: string; last_used: string | null; current: boolean }
+
+export interface About {
+  version: string | null; commit: string | null; built_at: string | null; started_at: string;
+  runtime: { label: string; value: string | null }[];
+  plaid: { label: string; value: string | null }[];
+  packages: { name: string; version: string | null; wanted: string; part: "server" | "web"; dev: boolean }[];
+}

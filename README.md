@@ -27,6 +27,7 @@ Every signed-in page shares one frame: a sidebar with the pages, **Connect bank*
 | `/accounts` | Account list (owners → account types → accounts) beside the selected account: balance, holdings and allocation for investment accounts, and a searchable, lazily-loaded transaction register |
 | `/connections` | Linked banks grouped by institution: health, last sync, per-account owner and show/hide, duplicate detection, rename and unlink |
 | `/passkeys` | The passkeys that can sign in: add one on this device, make a one-time invite link for another device, remove one, sign out |
+| `/about` | Fin's version and commit, and the versions of Node, SQLite, Plaid's API and SDK, and every package |
 | `/login` | Sign in with a passkey (or create the first one) |
 
 Each account's owner is set by hand (the Owner menu on Connections, or **Edit** on the account); until then it is listed under
@@ -68,7 +69,7 @@ within 1Password's rate limits) if a reference can't be read. Without 1Password,
 
 ## Run
 ```
-docker compose up -d --build     # the app listens on 3000 inside the container
+FIN_COMMIT=$(git rev-parse --short=10 HEAD) docker compose up -d --build   # app on 3000 in the container; the commit shows on /about
 pnpm install && pnpm build       # build the web app into dist/web (the server serves it)
 pnpm dev                         # local server (Node >= 26); pnpm dev:web alongside it for live reload on :5173
 pnpm test                        # unit + API tests
@@ -94,7 +95,7 @@ The daily sync runs inside the server process, so run a single instance. **Sync 
 ```
 src/app.ts            Express app: serves the web app for each page address, static files, routers
 src/auth.ts           Sessions and the login guard in front of every page and API
-src/routes/           auth (passkeys), link (Plaid Link + sync), accounts, register (transactions/payees), holdings, connections
+src/routes/           auth (passkeys), link (Plaid Link + sync), accounts, register (transactions/payees), holdings, connections, about
 src/server.ts         Entry point: the daily sync cron, then listen
 src/db.ts             SQLite schema, additive migrations, the account_view (effective owner, register)
 src/dto.ts            Account JSON for the web app (signed balance, kind, group)
@@ -103,7 +104,7 @@ src/classify.ts       Account grouping and order, asset classes, signed balances
 src/duplicates.ts     Same account seen through several connections
 src/plaidStatus.ts    Cached /item/get status for the Connections page
 web/                  The browser app: Svelte 5 + Vite, its own pnpm workspace package (built into dist/web)
-web/src/pages/        One component per page (Overview, Accounts, Connections, Passkeys, Login)
+web/src/pages/        One component per page (Overview, Accounts, Connections, Passkeys, About, Login)
 web/src/components/   The app frame (sidebar / phone tabs), page header, dialogs, pills, avatars; accounts/ has the
                       account list, transaction register and holdings
 web/src/lib/          API client, client-side router, shared account data, sync and Plaid Link state, formatting

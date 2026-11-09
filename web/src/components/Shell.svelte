@@ -1,6 +1,6 @@
 <!-- The frame around every signed-in page: a nav rail on wide screens, a top bar + bottom tabs on phones. -->
 <script lang="ts">
-  import { KeyRound, LayoutDashboard, LogOut, Plug, Plus, RefreshCw, Wallet } from "@lucide/svelte";
+  import { Info, KeyRound, LayoutDashboard, LogOut, Plug, Plus, RefreshCw, Wallet } from "@lucide/svelte";
   import { onMount, type Snippet } from "svelte";
   import { signOut } from "../lib/api";
   import { lastSynced } from "../lib/data.svelte";
@@ -35,7 +35,10 @@
       <button onclick={() => startLink()} disabled={linking.busy}><Plus size={16} aria-hidden="true" />{linking.busy ? "Adding…" : "Connect bank"}</button>
       <button class="ghost" onclick={startSync} disabled={sync.running}><RefreshCw size={15} class={sync.running ? "spin" : ""} aria-hidden="true" />{sync.running ? "Syncing…" : "Sync now"}</button>
       <p class="faint small">{synced ? `Synced ${ago(synced)}` : "Not synced yet"}</p>
-      <button class="quiet signout" onclick={signOut}><LogOut size={15} aria-hidden="true" />Sign out</button>
+      <div class="foot-links">
+        <button class="quiet" onclick={signOut}><LogOut size={15} aria-hidden="true" />Sign out</button>
+        <a href="/about" class="about" aria-current={route.path === "/about" ? "page" : undefined}><Info size={15} aria-hidden="true" />About</a>
+      </div>
     </div>
   </nav>
 
@@ -43,6 +46,7 @@
     <a href="/" class="brand"><img src="/favicon.svg" alt="" width="26" height="26"><span>Fin</span></a>
     <button class="ghost icon" aria-label="Sync now" onclick={startSync} disabled={sync.running}><RefreshCw size={17} class={sync.running ? "spin" : ""} /></button>
     <button class="icon" aria-label="Connect bank" onclick={() => startLink()} disabled={linking.busy}><Plus size={17} /></button>
+    <a href="/about" class="about icon" aria-label="About" aria-current={route.path === "/about" ? "page" : undefined}><Info size={17} /></a>
   </header>
 
   <main class="content">
@@ -66,8 +70,12 @@
   .rail ul a[aria-current="page"] { background:var(--accent-soft); color:var(--accent-strong) }
   .rail-foot { margin-top:auto; display:grid; gap:8px }
   .rail-foot p { margin:0 0 4px; text-align:center }
-  .signout { justify-content:flex-start; padding-left:10px; border-top:1px solid var(--line); border-radius:0; padding-top:12px; margin-top:4px }
-  .signout:hover { background:none }
+  .foot-links { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--line); padding-top:8px; margin-top:4px }
+  .foot-links button { padding-left:10px }
+  .about { display:inline-flex; align-items:center; gap:7px; padding:8px 10px; border-radius:var(--radius-sm); color:var(--muted); text-decoration:none; font-weight:500 }
+  .about:hover { background:var(--hover); color:var(--fg) }
+  .about[aria-current="page"] { color:var(--accent-strong) }
+  .about.icon { padding:7px }
 
   .content { margin-left:var(--nav-w) }
   .page { max-width:var(--page-max); margin:0 auto; padding:32px 36px 64px }

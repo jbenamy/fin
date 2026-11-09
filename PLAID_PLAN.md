@@ -64,6 +64,8 @@ in behavior; products confirmed unchanged by the developer. (workflow_id: wf_428
 - Round 1 (2026-11-08, after deploy): live in Production, link token created, /item/get ok and a full sync ok on all
   10 Items (bank-only, brokerage-only with holdings, mixed). CHECK-015 passes; still FAIL on CHECK-004 and CHECK-014
   (design, above) and CHECK-008 (Production, not Sandbox, and no new link/exchange exercised).
+- Remaining checks dropped by the developer (2026-11-08): CHECK-004 (update mode), CHECK-008 (Sandbox run) and
+  CHECK-014 (webhooks) are not pursued; the workflow ends here.
 
 ## Maintenance
 

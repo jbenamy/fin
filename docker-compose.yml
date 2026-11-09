@@ -2,7 +2,10 @@ name: fin
 
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        FIN_COMMIT: ${FIN_COMMIT:-}     # shown on the About page; the deploy sets it from git
     restart: unless-stopped
     env_file: .env                  # secrets as op:// references, resolved at startup by fin-entrypoint.sh
     secrets:

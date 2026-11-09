@@ -123,7 +123,7 @@ test("groups endpoint lists the display order", async () => {
 });
 
 test("clean URLs: every page serves the app; .html addresses redirect and keep the query string; unknown paths 404", async () => {
-  for (const path of ["/", "/accounts", "/connections", "/passkeys"]) {
+  for (const path of ["/", "/accounts", "/connections", "/passkeys", "/about"]) {
     const page = await fetch(path);
     assert.equal(page.status, 200, path);
     assert.match(await page.text(), /<title>Fin<\/title>/);
@@ -171,4 +171,24 @@ test("holdings API: positions largest first, gain from cost basis, allocation in
   assert.deepEqual(data.allocation.map((c: any) => [c.class, c.slot, c.value]), [["Stocks", 0, 2000], ["ETFs", 1, 6000], ["Cash", 4, 1000]]);
   const none = await get("/api/holdings?account=chk");
   assert.deepEqual([none.synced, none.holdings.length, none.allocation.length], [false, 0, 0]);
+});
+
+test("about: runtime and Plaid versions always; Fin's version and packages from the build's build-info.json", async () => {
+  const bare = await get("/api/about");
+  const value = (rows: { label: string; value: string | null }[], label: string) => rows.find((r) => r.label === label)?.value;
+  assert.equal(value(bare.runtime, "Node.js"), process.versions.node);
+  assert.match(value(bare.runtime, "SQLite")!, /^3\.\d+/);
+  assert.equal(value(bare.plaid, "API version"), "2020-09-14");
+  assert.deepEqual([bare.version, bare.commit, bare.built_at, bare.packages], [null, null, null, []]);
+
+  const { writeFileSync, rmSync } = await import("node:fs");
+  const { buildInfoFile } = await import("../src/paths.js");
+  const pkg = { name: "plaid", version: "51.0.0", wanted: "^51.0.0", part: "server", dev: false };
+  writeFileSync(buildInfoFile, JSON.stringify({ version: "1.2.3", commit: "abc1234", built_at: "2026-11-08T00:00:00Z", pnpm: "12.18.0", packages: [pkg] }));
+  try {
+    const built = await get("/api/about");
+    assert.deepEqual([built.version, built.commit, built.packages], ["1.2.3", "abc1234", [pkg]]);
+    assert.equal(value(built.plaid, "SDK (plaid)"), "51.0.0");
+    assert.equal(value(built.runtime, "pnpm (build)"), "12.18.0");
+  } finally { rmSync(buildInfoFile); }
 });

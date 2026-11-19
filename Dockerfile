@@ -1,8 +1,8 @@
 FROM 1password/op:2.42.0 AS op
 
-FROM node:26.13.0-slim AS build
+FROM node:26.13.1-slim AS build
 WORKDIR /app
-RUN npm install -g pnpm@12.18.0
+RUN npm install -g pnpm@12.21.0
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY web/package.json ./web/
 RUN pnpm install --frozen-lockfile
@@ -15,7 +15,7 @@ ARG FIN_COMMIT=
 # dist/ = the server (tsc) + dist/web, the Svelte app (Vite) + dist/build-info.json (versions, for the About page)
 RUN FIN_COMMIT=$FIN_COMMIT pnpm build && CI=true pnpm prune --prod
 
-FROM node:26.13.0-slim
+FROM node:26.13.1-slim
 ENV NODE_ENV=production DATA_DIR=/data PORT=3000
 WORKDIR /app
 COPY --from=build /app/node_modules ./node_modules

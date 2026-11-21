@@ -1,7 +1,22 @@
 # Fin
 
-A small, read-only dashboard of account balances and transactions across a family's banks, backed by [Plaid](https://plaid.com).
-A daily sync pulls balances and transactions; brokerage and retirement accounts show their current value, an allocation by asset class, and a holdings table (positions, price, cost basis, gain/loss) instead of a register, except cash management accounts (automatic for Plaid's `cash management` subtype, or switched on per account under Edit), whose activity comes from Plaid Investments. Each sync also records a daily snapshot of every balance and position. Investment accounts show performance from those snapshots: gain or loss per period (1M, 3M, YTD, 1Y, all) with deposits, withdrawals and retirement contributions taken out (from Plaid's investment transactions), and a chart of market value against net invested. Plaid has no past values, so this history starts at the first sync.
+A small, read-only dashboard of account balances, transactions and investments across a family's banks, backed by
+[Plaid](https://plaid.com). Self-hosted, one instance per family, signed in with passkeys.
+
+## Features
+- **Overview:** net worth, split into cash, investments and owed, with a card per account grouped by owner and account type.
+- **Transactions:** a searchable register (payee typeahead, newest first, loads as you scroll) per account or per owner.
+- **Investments:** brokerage, retirement and 401(k) accounts show their market value, an allocation by asset class,
+  and a holdings table (quantity, price with a stale-price flag, value, cost basis, gain/loss).
+- **Performance:** each investment account's gain or loss for 1M, 3M, YTD, 1Y or all of its history. Deposits,
+  withdrawals and retirement contributions are taken out, so only market moves, dividends and fees count. A chart
+  plots market value against net invested, with a hover readout and a table view.
+- **Connections:** health of every linked bank login, Plaid's own status, per-account owner and show/hide, detection of
+  the same account linked through two logins, rename and unlink.
+- **Daily sync** (plus **Sync now**): balances, transactions, investment activity and holdings. Each sync also saves a
+  snapshot of every balance and position. Plaid has no history, so value-over-time and performance start at the first sync.
+- **Passkey sign-in:** no passwords and no user accounts. Add devices with one-time invite links.
+- Works on phones: the sidebar becomes a top bar and bottom tabs.
 
 ## Screenshots
 Sample data only.
@@ -10,29 +25,47 @@ Sample data only.
 
 ![Overview](docs/screenshots/dashboard.png)
 
-**Accounts**
+**Investment account: performance, allocation and holdings**
 
-![Accounts](docs/screenshots/accounts.png)
+![Investment account](docs/screenshots/accounts.png)
+
+**An owner's transactions**
+
+![Transactions](docs/screenshots/transactions.png)
 
 **Connections**
 
 ![Connections](docs/screenshots/connections.png)
 
+**On a phone**
+
+<img src="docs/screenshots/phone.png" alt="Performance on a phone" width="390">
+
 ## Pages
-Every signed-in page shares one frame: a sidebar with the pages, **Connect bank**, **Sync now** and sign out (a top bar and bottom tabs on phones).
+Every signed-in page shares one frame: a sidebar with the pages, **Connect bank**, **Sync now**, sign out and About (a top bar and bottom tabs on phones).
 
 | URL | What it shows |
 |---|---|
-| `/` | Overview: net worth, cash / investments / owed, and a card per account grouped by owner and type |
-| `/accounts` | Account list (owners → account types → accounts) beside the selected account: balance, performance, holdings and allocation for investment accounts, and a searchable, lazily-loaded transaction register |
-| `/connections` | Linked banks grouped by institution: health, last sync, per-account owner and show/hide, duplicate detection, rename and unlink |
+| `/` | Overview: net worth, cash / investments / owed, and a card per account grouped by owner and type (filter by owner, hide $0 accounts) |
+| `/accounts` | Account list (owners → account types → accounts) beside the selection. An account shows its balance. Investment accounts add performance, allocation and holdings. Accounts with a register add transactions. An owner shows their total and all their transactions |
+| `/connections` | Linked banks grouped by institution: health, last sync, Plaid status, per-account owner and show/hide, duplicate detection, rename and unlink |
 | `/passkeys` | The passkeys that can sign in: add one on this device, make a one-time invite link for another device, remove one, sign out |
 | `/about` | Fin's version and commit, and the versions of Node, SQLite, Plaid's API and SDK, and every package |
 | `/login` | Sign in with a passkey (or create the first one) |
 
+Investment accounts have no transaction register, except cash management accounts. Those are detected automatically
+from Plaid's `cash management` subtype, or switched on per account under **Edit**, and their activity comes from Plaid
+Investments.
+
 Each account's owner is set by hand (the Owner menu on Connections, or **Edit** on the account); until then it is listed under
 "Unassigned". Accounts are grouped by type automatically (overridable under **Edit**).
 Credit cards and loans are shown as negative (owed) so totals add up.
+
+## Plaid products
+Link asks for **Transactions** (required) and **Investments** (consented at Link, billed by Plaid only once used). Sync
+calls the Investments endpoints only for logins that have an investment account. Holdings (positions) and
+Investment Transactions (activity, needed for performance) are separate Plaid subscriptions. Billing is per login
+(Item); unlinking a connection in Fin ends it.
 
 ## Configuration
 Copy `.env.example` to `.env` and fill it in:
@@ -41,7 +74,7 @@ Copy `.env.example` to `.env` and fill it in:
 |---|---|
 | `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV` | Plaid credentials (`production` for real banks, `sandbox` for testing) |
 | `PLAID_REDIRECT_URI` | Required for OAuth banks (Wells Fargo, Amex, Schwab, ...). Must be `https://<your-host>/accounts` and registered under *Allowed redirect URIs* in the Plaid Dashboard |
-| `SYNC_CRON`, `TZ` | When the daily sync runs (default `0 6 * * *`) and in which timezone |
+| `SYNC_CRON`, `TZ` | When the daily sync runs (default `0 6 * * *`) and in which timezone (compose default `America/New_York`) |
 | `HOSTNAMES` | Hostname(s) Caddy serves the app on (compose labels) |
 | `APP_ORIGIN` | Optional. The origin passkeys are bound to (e.g. `https://fin.example.com`); defaults to the address each request arrives on |
 | `DATA_DIR`, `PORT` | Database directory (default `data`, `/data` in the container) and listen port |
@@ -72,7 +105,7 @@ within 1Password's rate limits) if a reference can't be read. Without 1Password,
 FIN_COMMIT=$(git rev-parse --short=10 HEAD) docker compose up -d --build   # app on 3000 in the container; the commit shows on /about
 pnpm install && pnpm build       # build the web app into dist/web (the server serves it)
 pnpm dev                         # local server (Node >= 26); pnpm dev:web alongside it for live reload on :5173
-pnpm test                        # unit + API tests
+pnpm test                        # logic, API, passkey auth and sync tests (Plaid stubbed)
 pnpm typecheck
 ```
 The compose file follows a Caddy-docker-proxy pattern: no published ports, and the container joins the external `apps` network
@@ -94,20 +127,26 @@ The daily sync runs inside the server process, so run a single instance. **Sync 
 ## Layout
 ```
 src/app.ts            Express app: serves the web app for each page address, static files, routers
-src/auth.ts           Sessions and the login guard in front of every page and API
-src/routes/           auth (passkeys), link (Plaid Link + sync), accounts, register (transactions/payees), holdings, connections, about
 src/server.ts         Entry point: the daily sync cron, then listen
+src/auth.ts           Sessions and the login guard in front of every page and API
+src/routes/           auth (passkeys), link (Plaid Link + sync), accounts, register (transactions/payees),
+                      holdings (holdings + performance), connections, about
 src/db.ts             SQLite schema, additive migrations, the account_view (effective owner, register)
-src/dto.ts            Account JSON for the web app (signed balance, kind, group)
 src/sync.ts           Per-connection sync: balances, transactions, investment activity, holdings, daily snapshots
+src/performance.ts    Gain/loss and return per period, net of money moved in or out; value vs net invested
+src/dto.ts            Account JSON for the web app (signed balance, kind, group)
 src/classify.ts       Account grouping and order, asset classes, signed balances
 src/duplicates.ts     Same account seen through several connections
+src/plaid.ts          Plaid client (environment, API version) and error helper
 src/plaidStatus.ts    Cached /item/get status for the Connections page
+src/dates.ts, http.ts, paths.ts   Small shared helpers: dates, JSON errors, file locations
+scripts/build-info.ts Records version, commit and package versions at build time for the About page
 web/                  The browser app: Svelte 5 + Vite, its own pnpm workspace package (built into dist/web)
 web/src/pages/        One component per page (Overview, Accounts, Connections, Passkeys, About, Login)
 web/src/components/   The app frame (sidebar / phone tabs), page header, dialogs, pills, avatars; accounts/ has the
-                      account list, transaction register and holdings
+                      account list, transaction register, performance and holdings
 web/src/lib/          API client, client-side router, shared account data, sync and Plaid Link state, formatting
 test/                 node:test suites (pure logic, API, passkey auth with a software authenticator, sync with Plaid stubbed)
+docs/screenshots/     README images, taken from sample data
 ```
 `pnpm typecheck` checks the server (`tsconfig.json`, TypeScript 7) and the web app (`svelte-check`, which needs TypeScript 6, so `web/` pins its own).

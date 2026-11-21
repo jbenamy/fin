@@ -1,3 +1,5 @@
+import { daysBetween, isoDate } from "./dates.js";
+
 // Investment performance from Fin's own snapshots: Plaid has no historical balances, so values come from
 // balance_history (one row per sync day) and money added or withdrawn from investment_transactions.
 
@@ -49,8 +51,6 @@ const PERIODS: { key: string; label: string; start: (today: Date) => Date | null
   { key: "all", label: "All", start: () => null },
 ];
 function addMonths(d: Date, n: number) { const x = new Date(d); x.setUTCMonth(x.getUTCMonth() + n); return x; }
-const iso = (d: Date) => d.toISOString().slice(0, 10);
-const days = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / 86_400_000;
 
 /**
  * Gain and return for each standard period that the snapshots fully cover ("All" always, from the first snapshot).
@@ -63,8 +63,8 @@ export function periods(snaps: Snapshot[], activity: Activity[], today = new Dat
   const out: Period[] = [];
   for (const p of PERIODS) {
     const want = p.start(today);
-    if (want && iso(want) < first.date) continue;
-    const s = want ? snaps.filter((x) => x.date <= iso(want)).pop()! : first;
+    if (want && isoDate(want) < first.date) continue;
+    const s = want ? snaps.filter((x) => x.date <= isoDate(want)).pop()! : first;
     if (s.date >= last.date) continue;
     out.push({ key: p.key, label: p.label, ...measure(s, last, activity) });
   }
@@ -73,11 +73,11 @@ export function periods(snaps: Snapshot[], activity: Activity[], today = new Dat
 
 function measure(s: Snapshot, e: Snapshot, activity: Activity[]) {
   let net = 0, weighted = 0, inc = 0, fees = 0;
-  const span = days(s.date, e.date);
+  const span = daysBetween(s.date, e.date);
   for (const t of activity) {
     if (t.date <= s.date || t.date > e.date) continue;
     const f = externalFlow(t);
-    if (f != null) { net += f; weighted += f * (days(t.date, e.date) / span); }
+    if (f != null) { net += f; weighted += f * (daysBetween(t.date, e.date) / span); }
     inc += income(t); fees += fee(t);
   }
   const gain = e.value - s.value - net, base = s.value + weighted;

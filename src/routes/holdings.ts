@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { ASSET_CLASSES, assetClass } from "../classify.js";
+import { DAY_MS, isoDate } from "../dates.js";
 import { db } from "../db.js";
 import { type Activity, periods, series, type Snapshot } from "../performance.js";
 import type { HoldingRow } from "../types.js";
@@ -17,7 +18,7 @@ holdings.get("/api/holdings", (req, res) => {
   const synced = rows.length > 0 || !!db.prepare("SELECT 1 FROM holding_history WHERE account_id = ? LIMIT 1").get(account);
   const total = rows.reduce((t, h) => t + h.value, 0);
   const pct = (v: number) => (total > 0 ? v / total : null);
-  const staleBefore = new Date(Date.now() - STALE_DAYS * 86_400_000).toISOString().slice(0, 10);
+  const staleBefore = isoDate(Date.now() - STALE_DAYS * DAY_MS);
   const positions = rows.map((h) => {
     const gain = h.cost_basis == null ? null : h.value - h.cost_basis;
     return {

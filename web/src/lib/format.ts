@@ -13,6 +13,9 @@ export const usd0 = (n: number | null | undefined) => n == null ? "—" : n.toLo
 export const pct = (n: number | null | undefined) => n == null ? "—" : (n * 100).toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + "%";
 export const signed = (n: number | null | undefined, fmt: (n: number) => string) => n == null ? "—" : (n > 0 ? "+" : "") + fmt(n);
 
+/** The latest of some ISO timestamps (missing ones skipped), or null. */
+export const latest = (times: (string | null | undefined)[]) => times.filter((t): t is string => !!t).sort().pop() ?? null;
+
 /** Total of the server-supplied signed balances (credit cards and loans already negative). */
 export const sum = (accounts: Account[]) => accounts.reduce((total, a) => total + (a.balance ?? 0), 0);
 

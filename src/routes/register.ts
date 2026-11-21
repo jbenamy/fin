@@ -8,6 +8,8 @@ export const register = Router();
 // hidden accounts or balance-only investment accounts).
 const PAYEE = "COALESCE(NULLIF(t.merchant, ''), t.name)";
 const SCOPE = `a.register = 1 AND a.hidden = 0 AND (? = '' OR t.account_id = ?) AND (? = '' OR a.owner = ?)`;
+/** `?limit=`: a whole number in [1, max], else `fallback`. */
+const limitParam = (req: Request, fallback: number, max: number) => Math.min(Math.max(Number(req.query.limit) || fallback, 1), max);
 const scopeArgs = (req: Request) => {
   const account = String(req.query.account ?? ""), owner = String(req.query.owner ?? "");
   return [account, account, owner, owner];
@@ -17,7 +19,7 @@ const scopeArgs = (req: Request) => {
 // Pass the previous response's `next` as before_date/before_id to get the following page.
 // `payee` = exact payee (case-insensitive); `q` = substring match on payee or raw name.
 register.get("/api/transactions", (req, res) => {
-  const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+  const limit = limitParam(req, 100, 500);
   const beforeDate = String(req.query.before_date ?? ""), beforeId = String(req.query.before_id ?? "");
   const payee = String(req.query.payee ?? ""), q = String(req.query.q ?? "");
   const rows = db.prepare(`
@@ -37,7 +39,7 @@ register.get("/api/transactions", (req, res) => {
 // Distinct payees (with transaction counts) matching `q`, for the search dropdown. Prefix matches first, then most frequent.
 register.get("/api/payees", (req, res) => {
   const q = String(req.query.q ?? "");
-  const limit = Math.min(Math.max(Number(req.query.limit) || 12, 1), 50);
+  const limit = limitParam(req, 12, 50);
   const where = `${SCOPE} AND (? = '' OR instr(lower(${PAYEE}), lower(?)) > 0)`;
   const args = [...scopeArgs(req), q, q];
   const payees = db.prepare(`

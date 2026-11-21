@@ -41,7 +41,7 @@ Run `pnpm typecheck && pnpm test` before committing. pnpm 12: `pnpm-workspace.ya
 - `web/` pins TypeScript 6 because `svelte-check` needs TypeScript's JS API, which TypeScript 7 doesn't ship; the server stays on 7. Tests point `WEB_DIR` at a stub build (`test/helpers.ts`).
 
 ## Conventions
-- Use `api()` (`lib/api.ts`) for JSON requests, `store` for localStorage, `Dialog.svelte` for modal forms, `byName`/`cmp` for sorting (case-insensitive, numeric-aware), `usd` for money (all in `lib/`). Status shows as `Pill` (icon + word, never color alone).
+- Use `api()` (`lib/api.ts`) for JSON requests, `perAccount` (`lib/perAccount.svelte.ts`) for an account card's own fetch, `store` for localStorage, `Dialog.svelte` for modal forms, `byName`/`cmp` for sorting (case-insensitive, numeric-aware), `usd` for money, `latest` for the newest timestamp (all in `lib/`). Server dates go through `src/dates.ts` (`isoDate`, `DAY_MS`). Status shows as `Pill` (icon + word, never color alone).
 - Svelte escapes interpolated text; never use `{@html}` with data.
 - Don't print or log Plaid tokens, secrets, or account owner names/PII in tool output or logs (log request ids and error codes).
 - Keep behavior stable when refactoring. UI changes were checked by screenshotting every page at 390/900/1440px from a seeded DB with headless Chrome over CDP (Playwright's headless shell is in `~/.cache/ms-playwright`); that harness isn't in the repo. The README screenshots come from the same sample data.

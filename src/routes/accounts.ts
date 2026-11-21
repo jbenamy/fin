@@ -43,9 +43,7 @@ accounts.patch("/api/accounts/:id", (req, res) => {
   if (typeof hidden === "boolean") set("hidden", hidden ? 1 : 0);
   if (owner !== undefined) set("owner_override", cleanLabel(owner, 80));
   if (group !== undefined) set("group_override", cleanLabel(group, 80));
-  if (register === null || typeof register === "boolean") {
-    set("register_override", register == null ? null : register ? 1 : 0);
-    set("inv_tx_synced", null);   // the next sync re-reads the full history instead of leaving a gap
-  }
+  // The next sync rebuilds a switched-on register from the stored investment activity (full history).
+  if (register === null || typeof register === "boolean") set("register_override", register == null ? null : register ? 1 : 0);
   res.json({ ok: true });
 });

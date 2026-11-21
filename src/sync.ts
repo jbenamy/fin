@@ -1,4 +1,5 @@
 import type { Plaid } from "plaid";
+import { DAY_MS, isoDate } from "./dates.js";
 import { db, transaction } from "./db.js";
 import { invalidatePlaidStatus } from "./plaidStatus.js";
 import { plaid, plaidError } from "./plaid.js";
@@ -35,10 +36,8 @@ const upsertTx = db.prepare(`
 const deleteTx = db.prepare("DELETE FROM transactions WHERE transaction_id = ?");
 const snapshotBalance = db.prepare("INSERT OR REPLACE INTO balance_history (account_id, date, balance) VALUES (?, ?, ?)");
 
-const DAY = 86_400_000;
 /** "?,?,?" for an SQL IN list of `ids`. */
 const placeholders = (ids: string[]) => ids.map(() => "?").join(",");
-const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 
 interface Registers {
   /** Accounts whose transactions come from /transactions/sync. */
@@ -51,7 +50,7 @@ type InvestmentAccount = { account_id: string; inv_activity_synced: string | nul
 
 async function syncBalances(item: SyncItem): Promise<{ registers: Registers; investmentAccounts: InvestmentAccount[]; total: number }> {
   const data = await plaid.accounts.get({ access_token: item.access_token });
-  const now = new Date().toISOString(), today = isoDate(Date.now());
+  const now = new Date().toISOString(), today = isoDate();
   transaction(() => {
     for (const a of data.accounts) {
       upsertAccount.run(
@@ -67,11 +66,10 @@ async function syncBalances(item: SyncItem): Promise<{ registers: Registers; inv
   const rows = (db.prepare("SELECT account_id, type, register, inv_activity_synced FROM account_view WHERE item_id = ?")
     .all(item.item_id) as { account_id: string; type: string; register: number; inv_activity_synced: string | null }[])
     .filter((r) => live.has(r.account_id));
-  const ids = (f: (r: (typeof rows)[number]) => boolean) => new Set(rows.filter(f).map((r) => r.account_id));
-  const investmentAccounts = rows.filter((r) => r.type === "investment")
-    .map(({ account_id, inv_activity_synced }) => ({ account_id, inv_activity_synced }));
+  const registerIds = (list: typeof rows) => new Set(list.filter((r) => r.register === 1).map((r) => r.account_id));
+  const investmentAccounts = rows.filter((r) => r.type === "investment");
   return {
-    registers: { cash: ids((r) => r.register === 1 && r.type !== "investment"), investment: ids((r) => r.register === 1 && r.type === "investment") },
+    registers: { cash: registerIds(rows.filter((r) => r.type !== "investment")), investment: registerIds(investmentAccounts) },
     investmentAccounts, total: data.accounts.length,
   };
 }
@@ -123,7 +121,7 @@ const upsertInvTx = db.prepare(`
  */
 async function syncInvestmentTransactions(item: SyncItem, accounts: InvestmentAccount[], registers: Set<string>, onFetched: (n: number) => void) {
   const now = Date.now(), end = isoDate(now);
-  const start = isoDate(Math.min(...accounts.map((a) => a.inv_activity_synced ? Date.parse(a.inv_activity_synced) - 30 * DAY : now - 730 * DAY)));
+  const start = isoDate(Math.min(...accounts.map((a) => a.inv_activity_synced ? Date.parse(a.inv_activity_synced) - 30 * DAY_MS : now - 730 * DAY_MS)));
   const ids = accounts.map((a) => a.account_id);
   const fetched: Plaid.InvestmentTransaction[] = [];
   try {
@@ -202,7 +200,7 @@ async function syncHoldings(item: SyncItem, accountIds: string[]): Promise<numbe
     throw e;
   }
   const byId = new Map(securities.map((s) => [s.security_id, s]));
-  const today = isoDate(Date.now()), inList = placeholders(accountIds);
+  const today = isoDate(), inList = placeholders(accountIds);
   // A security can appear twice in one account (e.g. separate lots): add them up. Unknown cost basis stays unknown.
   const upsert = db.prepare(`
     INSERT INTO holdings (account_id, security_id, name, ticker, security_type, sector, is_cash, quantity, price, price_as_of, value, cost_basis, vested_value, currency)

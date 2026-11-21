@@ -7,7 +7,7 @@
   import PageHeader from "../components/PageHeader.svelte";
   import Switch from "../components/Switch.svelte";
   import { data } from "../lib/data.svelte";
-  import { byGroup, dateTime, ownerList, plural, sum, usd, usd0, where } from "../lib/format";
+  import { byGroup, dateTime, latest, ownerList, plural, sum, usd, usd0, where } from "../lib/format";
   import { groupIcon, KIND_TONE } from "../lib/icons";
   import { startLink } from "../lib/link.svelte";
   import { store } from "../lib/store";
@@ -22,7 +22,7 @@
   const zeros = $derived(everything.filter((a) => a.balance === 0).length);
   const shown = $derived(hideZero ? everything.filter((a) => a.balance !== 0) : everything); // net worth is unaffected: zeros add nothing
   const ofKind = (kind: Kind) => shown.filter((a) => a.kind === kind);
-  const updated = $derived(data.accounts.map((a) => a.updated_at).filter(Boolean).sort().pop());
+  const updated = $derived(latest(data.accounts.map((a) => a.updated_at)));
   const sections = $derived((owner ? [owner] : owners).map((o) => ({ o, mine: shown.filter((a) => a.owner === o) })).filter(({ mine }) => mine.length));
 
   const tiles = $derived([

@@ -1,24 +1,14 @@
 <!-- An investment account's gain / loss per period and its value against the money put in (from /api/performance). -->
 <script lang="ts">
   import { TrendingUp } from "@lucide/svelte";
-  import { api, message } from "../../lib/api";
-  import { data } from "../../lib/data.svelte";
   import { day, pct, signed, usd } from "../../lib/format";
+  import { perAccount } from "../../lib/perAccount.svelte";
   import { store } from "../../lib/store";
   import type { Performance } from "../../lib/types";
 
   let { accountId }: { accountId: string } = $props();
-  // Same loading pattern as Holdings: results are tagged with their account.
-  let loaded = $state<{ id: string; p: Performance } | null>(null), error = $state("");
-  const id = $derived(accountId);
-  const perf = $derived(loaded?.id === id ? loaded.p : null);
-  let seq = 0;
-  $effect(() => {
-    void data.version;
-    const forId = id, mine = ++seq; error = "";
-    api<Performance>("/api/performance?account=" + encodeURIComponent(forId))
-      .then((d) => { if (mine === seq) loaded = { id: forId, p: d }; }).catch((e) => { if (mine === seq) error = message(e); });
-  });
+  const res = perAccount<Performance>(() => accountId, (id) => "/api/performance?account=" + encodeURIComponent(id));
+  const perf = $derived(res.value);
 
   let want = $state(store.get("fin.perf.period", "all")!);
   const choose = (key: string) => { want = key; store.set("fin.perf.period", key); };
@@ -60,8 +50,8 @@
   const gainClass = (n: number) => (n < 0 ? "neg" : n > 0 ? "pos" : "");
 </script>
 
-{#if error}
-  <p class="err">Couldn't load performance: {error}</p>
+{#if res.error}
+  <p class="err">Couldn't load performance: {res.error}</p>
 {:else if perf}
   <section class="card card-pad perf">
     <div class="head">

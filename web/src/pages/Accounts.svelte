@@ -11,7 +11,7 @@
   import IconChip from "../components/IconChip.svelte";
   import { api, message } from "../lib/api";
   import { data, lastSynced, updateAccount } from "../lib/data.svelte";
-  import { dateTime, ownerList, plural, sum, usd, where } from "../lib/format";
+  import { dateTime, latest, ownerList, plural, sum, usd, where } from "../lib/format";
   import { groupIcon, KIND_TONE } from "../lib/icons";
   import { startLink } from "../lib/link.svelte";
   import { navigate, route } from "../lib/router.svelte";
@@ -87,7 +87,7 @@
         </header>
         <div class="balance card">
           <div><div class="bl">Total</div><div class="bv num" class:neg={sum(mine) < 0}>{usd(sum(mine))}</div></div>
-          <div class="asof muted small">As of {dateTime(mine.map((a) => a.updated_at).filter(Boolean).sort().pop())}</div>
+          <div class="asof muted small">As of {dateTime(latest(mine.map((a) => a.updated_at)))}</div>
         </div>
       {/if}
 

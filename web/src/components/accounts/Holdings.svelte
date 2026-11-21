@@ -1,26 +1,13 @@
 <!-- An investment account's allocation bar and holdings table (from /api/holdings). -->
 <script lang="ts">
   import { ChartPie, Layers, TriangleAlert } from "@lucide/svelte";
-  import { api, message } from "../../lib/api";
-  import { data } from "../../lib/data.svelte";
   import { day, pct, signed, usd } from "../../lib/format";
+  import { perAccount } from "../../lib/perAccount.svelte";
   import type { Holdings } from "../../lib/types";
 
   let { accountId }: { accountId: string } = $props();
-  // Results are tagged with their account, so switching accounts shows "Loading" instead of the previous one's holdings,
-  // while a refetch for the same account (after a sync) keeps the current table on screen.
-  let loaded = $state<{ id: string; h: Holdings } | null>(null), error = $state("");
-  // $derived passes on only a changed id (the prop is a getter on an account object that a reload replaces).
-  const id = $derived(accountId);
-  const h = $derived(loaded?.id === id ? loaded.h : null);
-  let seq = 0;
-  // Refetch when the account changes or after a sync / edit (data.version).
-  $effect(() => {
-    void data.version;
-    const forId = id, mine = ++seq; error = "";
-    api<Holdings>("/api/holdings?account=" + encodeURIComponent(forId))
-      .then((d) => { if (mine === seq) loaded = { id: forId, h: d }; }).catch((e) => { if (mine === seq) error = message(e); });
-  });
+  const res = perAccount<Holdings>(() => accountId, (id) => "/api/holdings?account=" + encodeURIComponent(id));
+  const h = $derived(res.value);
 
   const shown = $derived(h ? h.allocation.filter((c) => c.value > 0 && c.pct) : []);
   const hasCost = $derived(!!h?.holdings.some((x) => x.cost_basis != null));
@@ -29,8 +16,8 @@
   const qty = (n: number) => n.toLocaleString("en-US", { maximumFractionDigits: 4 });
 </script>
 
-{#if error}
-  <p class="err">Couldn't load holdings: {error}</p>
+{#if res.error}
+  <p class="err">Couldn't load holdings: {res.error}</p>
 {:else if !h}
   <p class="muted small">Loading holdings…</p>
 {:else if !h.holdings.length}

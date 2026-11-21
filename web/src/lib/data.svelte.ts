@@ -1,6 +1,7 @@
 // Accounts shared by every page, reloaded after a sync or a new connection. `version` bumps on every change so
 // pages with their own data (Connections) know to refetch.
 import { api, message } from "./api";
+import { latest } from "./format";
 import type { Account } from "./types";
 
 export const data = $state({ accounts: [] as Account[], loaded: false, error: "", version: 0 });
@@ -21,4 +22,4 @@ export async function updateAccount(id: string, fields: Record<string, unknown>)
 }
 
 /** Most recent sync time across all connections. */
-export const lastSynced = () => data.accounts.map((a) => a.last_synced).filter(Boolean).sort().pop() ?? null;
+export const lastSynced = () => latest(data.accounts.map((a) => a.last_synced));

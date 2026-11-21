@@ -9,7 +9,7 @@ export interface AccountRow {
   account_id: string; item_id: string; name: string; mask: string | null; type: string; subtype: string | null;
   current_balance: number | null; available_balance: number | null; currency: string | null; updated_at: string | null;
   owner_detected: string | null; owner_override: string | null; group_override: string | null; hidden: number;
-  register_override: number | null; inv_tx_synced: string | null;
+  register_override: number | null; inv_tx_synced: string | null; inv_activity_synced: string | null;
 }
 
 /** `account_view`: accounts plus the effective owner (manual override, else detected, else "Unassigned")

@@ -84,7 +84,11 @@ addColumn("accounts", "hidden", "INTEGER NOT NULL DEFAULT 0");
 // Investment accounts only: null = automatic | 1 = show a register | 0 = balance only.
 addColumn("accounts", "register_override", "INTEGER");
 // Date (YYYY-MM-DD) of the last /investments/transactions/get for an investment account with a register.
+// Unused since every investment account's activity goes to investment_transactions (inv_activity_synced).
 addColumn("accounts", "inv_tx_synced", "TEXT");
+// Date (YYYY-MM-DD) of the last /investments/transactions/get covering this investment account (any account, register
+// or not). Null = never fetched: the next sync reads the full 24 months.
+addColumn("accounts", "inv_activity_synced", "TEXT");
 
 // Investment positions (from /investments/holdings/get), replaced per Item on every sync. The security's display
 // fields are copied in: Plaid's security_id is not a stable key (it can change on a corporate action).
@@ -126,7 +130,27 @@ CREATE TABLE IF NOT EXISTS holding_history (
   value REAL NOT NULL,
   PRIMARY KEY (account_id, security_id, date)
 );
+-- Every investment account's activity (/investments/transactions/get): buys, sells, dividends, contributions, fees.
+-- Performance separates money added or withdrawn from market gains with it. Plaid's sign: amount positive = cash out
+-- of the account; quantity positive = units in. Investment accounts with a register also get these copied into
+-- transactions.
+CREATE TABLE IF NOT EXISTS investment_transactions (
+  investment_transaction_id TEXT PRIMARY KEY,
+  account_id TEXT NOT NULL,
+  date TEXT NOT NULL,
+  name TEXT,
+  type TEXT,                      -- buy, sell, cash, fee, transfer, cancel
+  subtype TEXT,                   -- deposit, contribution, dividend, interest, withdrawal, ...
+  amount REAL NOT NULL,
+  quantity REAL,
+  price REAL,
+  fees REAL,
+  security_id TEXT,
+  currency TEXT
+);
+CREATE INDEX IF NOT EXISTS inv_tx_account_date ON investment_transactions(account_id, date);
 `);
+addColumn("holding_history", "cost_basis", "REAL");
 
 // One definition of "who owns this account": manual override, else the owner Plaid Identity detected before it was
 // removed (owner_detected, no longer written), else Unassigned.

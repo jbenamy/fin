@@ -52,3 +52,13 @@ export interface About {
   plaid: { label: string; value: string | null }[];
   packages: { name: string; version: string | null; wanted: string; part: "server" | "web"; dev: boolean }[];
 }
+
+export interface PerformancePeriod {
+  key: string; label: string; start: string; end: string; start_value: number; end_value: number;
+  net_contributions: number; gain: number; income: number; fees: number; return: number | null;
+}
+export interface Performance {
+  activity_synced: string | null;
+  series: { date: string; value: number; invested: number }[];
+  periods: PerformancePeriod[];
+}

@@ -1,7 +1,7 @@
 # Fin
 
 A small, read-only dashboard of account balances and transactions across a family's banks, backed by [Plaid](https://plaid.com).
-A daily sync pulls balances and transactions; brokerage and retirement accounts show their current value, an allocation by asset class, and a holdings table (positions, price, cost basis, gain/loss) instead of a register, except cash management accounts (automatic for Plaid's `cash management` subtype, or switched on per account under Edit), whose activity comes from Plaid Investments. Each sync also records a daily snapshot of every balance and position, for value-over-time charts later.
+A daily sync pulls balances and transactions; brokerage and retirement accounts show their current value, an allocation by asset class, and a holdings table (positions, price, cost basis, gain/loss) instead of a register, except cash management accounts (automatic for Plaid's `cash management` subtype, or switched on per account under Edit), whose activity comes from Plaid Investments. Each sync also records a daily snapshot of every balance and position. Investment accounts show performance from those snapshots: gain or loss per period (1M, 3M, YTD, 1Y, all) with deposits, withdrawals and retirement contributions taken out (from Plaid's investment transactions), and a chart of market value against net invested. Plaid has no past values, so this history starts at the first sync.
 
 ## Screenshots
 Sample data only.
@@ -24,7 +24,7 @@ Every signed-in page shares one frame: a sidebar with the pages, **Connect bank*
 | URL | What it shows |
 |---|---|
 | `/` | Overview: net worth, cash / investments / owed, and a card per account grouped by owner and type |
-| `/accounts` | Account list (owners → account types → accounts) beside the selected account: balance, holdings and allocation for investment accounts, and a searchable, lazily-loaded transaction register |
+| `/accounts` | Account list (owners → account types → accounts) beside the selected account: balance, performance, holdings and allocation for investment accounts, and a searchable, lazily-loaded transaction register |
 | `/connections` | Linked banks grouped by institution: health, last sync, per-account owner and show/hide, duplicate detection, rename and unlink |
 | `/passkeys` | The passkeys that can sign in: add one on this device, make a one-time invite link for another device, remove one, sign out |
 | `/about` | Fin's version and commit, and the versions of Node, SQLite, Plaid's API and SDK, and every package |

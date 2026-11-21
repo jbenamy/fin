@@ -173,6 +173,19 @@ test("holdings API: positions largest first, gain from cost basis, allocation in
   assert.deepEqual([none.synced, none.holdings.length, none.allocation.length], [false, 0, 0]);
 });
 
+test("performance API: no periods until activity is synced; then gain net of contributions", async () => {
+  const snap = db.prepare("INSERT INTO balance_history (account_id, date, balance) VALUES ('brk', ?, ?)");
+  snap.run("2026-10-01", 8000); snap.run("2026-10-11", 8800); snap.run("2026-10-21", 9000);
+  db.prepare(`INSERT INTO investment_transactions (investment_transaction_id, account_id, date, type, subtype, amount) VALUES ('d1','brk','2026-10-05','cash','deposit',-500)`).run();
+  const before = await get("/api/performance?account=brk");
+  assert.deepEqual([before.activity_synced, before.periods, before.series.map((p: any) => p.invested)], [null, [], [8000, 8500, 8500]]);
+
+  db.prepare("UPDATE accounts SET inv_activity_synced = '2026-10-21' WHERE account_id = 'brk'").run();
+  const all = (await get("/api/performance?account=brk")).periods.find((p: any) => p.key === "all");
+  assert.deepEqual([all.start_value, all.end_value, all.net_contributions, all.gain], [8000, 9000, 500, 500]);
+  assert.equal((await fetch("/api/performance?account=chk")).status, 404);   // not an investment account
+});
+
 test("about: runtime and Plaid versions always; Fin's version and packages from the build's build-info.json", async () => {
   const bare = await get("/api/about");
   const value = (rows: { label: string; value: string | null }[], label: string) => rows.find((r) => r.label === label)?.value;

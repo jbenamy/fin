@@ -25,6 +25,8 @@ const plaidFailure = (error_code: string, error_message?: string) => async (): P
 };
 // Default: no holdings. Tests that care about holdings replace this stub.
 stub("investments.getHoldings", () => ({ holdings: [], securities: [] }));
+// Default: no investment activity.
+stubPage("investments.getTransactions", () => ({ investment_transactions: [], total_investment_transactions: 0 }));
 const tx = (id: string, account: string) => ({ transaction_id: id, account_id: account, date: "2026-10-01", name: "x", merchant_name: null, amount: 5, pending: false });
 
 test("sync stores balances and cash transactions, skips brokerage transactions", async () => {
@@ -80,7 +82,7 @@ test("Plaid item status is cached, refreshable, and invalidated", async () => {
 const invTx = (id: string, account: string, date = "2026-10-01") =>
   ({ investment_transaction_id: id, account_id: account, date, name: "Deposit", amount: -100, type: "cash", subtype: "deposit" });
 
-test("cash management accounts get a register from Investments; plain brokerage stays balance-only", async () => {
+test("investment activity is stored for every investment account; cash management also gets a register", async () => {
   db.exec(`INSERT INTO items (item_id, access_token, institution) VALUES ('i2','tok2','Charles Schwab')`);
   stub("accounts.get", () => ({ accounts: [
     { account_id: "cma", name: "Cash Management", mask: "3", type: "investment", subtype: "cash management", balances: { current: 50, available: 50, iso_currency_code: "USD" } },
@@ -98,32 +100,40 @@ test("cash management accounts get a register from Investments; plain brokerage 
   const r1 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.equal(r1.ok, true);
   assert.deepEqual([r1.registerAccounts, r1.balanceOnlyAccounts, r1.added], [1, 1, 3]);
-  assert.deepEqual(calls.map((c) => [c.options.account_ids, c.options.offset]), [[["cma"], 0], [["cma"], 2]]);
+  assert.deepEqual(calls.map((c) => [c.options.account_ids, c.options.offset]), [[["cma", "brk2"], 0], [["cma", "brk2"], 2]]);
   const reg = (db.prepare("SELECT category, amount, pending FROM transactions WHERE transaction_id = 'v1'").get() as any);
   assert.deepEqual({ ...reg }, { category: "deposit", amount: -100, pending: 0 });
-  const synced = (db.prepare("SELECT inv_tx_synced FROM accounts WHERE account_id = 'cma'").get() as any).inv_tx_synced;
+  const synced = (db.prepare("SELECT inv_activity_synced FROM accounts WHERE account_id = 'cma'").get() as any).inv_activity_synced;
   assert.match(synced, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal((db.prepare("SELECT inv_activity_synced FROM accounts WHERE account_id = 'brk2'").get() as any).inv_activity_synced, synced);
+  const act = db.prepare("SELECT type, subtype, amount FROM investment_transactions WHERE investment_transaction_id = 'v1'").get() as any;
+  assert.deepEqual({ ...act }, { type: "cash", subtype: "deposit", amount: -100 });
 
   // Later syncs re-read a 30-day window and drop what Plaid no longer returns.
   calls.length = 0;
-  db.prepare("UPDATE transactions SET date = ? WHERE transaction_id IN ('v1','v2','v3')").run(synced);
+  db.prepare("UPDATE investment_transactions SET date = ? WHERE investment_transaction_id IN ('v1','v2','v3')").run(synced);
   pages = [[invTx("v1", "cma", synced)], []];
   stubPage("investments.getTransactions", (req: any) => { calls.push(req); return { investment_transactions: pages[0], total_investment_transactions: 1 }; });
   const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.deepEqual([r2.added, r2.removed], [0, 2]);
   assert.equal(calls[0].start_date, new Date(Date.parse(synced) - 30 * 86_400_000).toISOString().slice(0, 10));
   assert.deepEqual(db.prepare("SELECT transaction_id FROM transactions WHERE account_id = 'cma'").all().map((r: any) => r.transaction_id), ["v1"]);
+  assert.deepEqual(db.prepare("SELECT investment_transaction_id AS id FROM investment_transactions WHERE account_id = 'cma'").all().map((r: any) => r.id), ["v1"]);
 });
 
 test("a brokerage account switched on manually gets a register; PRODUCT_NOT_READY is not a failure", async () => {
   db.prepare("UPDATE accounts SET register_override = 1 WHERE account_id = 'brk2'").run();
   db.prepare("UPDATE accounts SET register_override = 0 WHERE account_id = 'cma'").run();
+  // brk2's older activity was stored before its register was on; the register gets all of it.
+  db.prepare("INSERT INTO investment_transactions (investment_transaction_id, account_id, date, type, subtype, amount) VALUES ('old', 'brk2', '2025-01-02', 'cash', 'dividend', -5)").run();
   const seen: string[][] = [];
   stubPage("investments.getTransactions", (req: any) => { seen.push(req.options.account_ids); return { investment_transactions: [invTx("v9", "brk2")], total_investment_transactions: 1 }; });
   const r = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
   assert.equal(r.ok, true);
-  assert.deepEqual(seen, [["brk2"]]);
+  assert.deepEqual(seen, [["cma", "brk2"]]);
   assert.deepEqual([r.registerAccounts, r.balanceOnlyAccounts], [1, 1]);
+  assert.deepEqual(db.prepare("SELECT transaction_id, category FROM transactions WHERE account_id = 'brk2' ORDER BY date").all().map((r: any) => ({ ...r })),
+    [{ transaction_id: "old", category: "dividend" }, { transaction_id: "v9", category: "deposit" }]);
 
   fail("investments.getTransactions", plaidFailure("PRODUCT_NOT_READY"));
   const r2 = await syncItem({ item_id: "i2", access_token: "tok2", cursor: null });
@@ -158,7 +168,8 @@ test("holdings: stored per account with the fresher price, lots added up, snapsh
 
   // A second sync the same day replaces today's snapshot rather than adding to it.
   await syncItem({ item_id: "i3", access_token: "tok3", cursor: null });
-  assert.equal((db.prepare("SELECT value FROM holding_history WHERE account_id = 'ira' AND security_id = 'vti'").get() as any).value, 2400);
+  const snap = db.prepare("SELECT value, cost_basis FROM holding_history WHERE account_id = 'ira' AND security_id = 'vti'").get() as any;
+  assert.deepEqual([snap.value, snap.cost_basis], [2400, 1800]);
 
   // Holdings not available (still loading, no consent...) keep what was stored and don't fail the sync.
   fail("investments.getHoldings", plaidFailure("PRODUCT_NOT_READY"));

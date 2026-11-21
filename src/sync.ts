@@ -43,11 +43,13 @@ const isoDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 interface Registers {
   /** Accounts whose transactions come from /transactions/sync. */
   cash: Set<string>;
-  /** Investment accounts with a register (e.g. cash management): their activity comes from /investments/transactions/get. */
-  investment: { account_id: string; inv_tx_synced: string | null }[];
+  /** Investment accounts with a register (e.g. cash management): their activity is copied into transactions. */
+  investment: Set<string>;
 }
+/** Every live investment account, with the date its activity was last fetched. */
+type InvestmentAccount = { account_id: string; inv_activity_synced: string | null };
 
-async function syncBalances(item: SyncItem): Promise<{ registers: Registers; investmentAccounts: string[]; total: number }> {
+async function syncBalances(item: SyncItem): Promise<{ registers: Registers; investmentAccounts: InvestmentAccount[]; total: number }> {
   const data = await plaid.accounts.get({ access_token: item.access_token });
   const now = new Date().toISOString(), today = isoDate(Date.now());
   transaction(() => {
@@ -62,12 +64,16 @@ async function syncBalances(item: SyncItem): Promise<{ registers: Registers; inv
   // account_view decides which accounts have a register (most investment accounts show a balance only).
   // Only accounts Plaid still returns: a closed account left in the database would be rejected in account_ids.
   const live = new Set(data.accounts.map((a) => a.account_id));
-  const rows = (db.prepare("SELECT account_id, type, inv_tx_synced FROM account_view WHERE item_id = ? AND register = 1")
-    .all(item.item_id) as { account_id: string; type: string; inv_tx_synced: string | null }[]).filter((r) => live.has(r.account_id));
-  const cash = new Set(rows.filter((r) => r.type !== "investment").map((r) => r.account_id));
-  const investment = rows.filter((r) => r.type === "investment");
-  const investmentAccounts = data.accounts.filter((a) => a.type === "investment").map((a) => a.account_id);
-  return { registers: { cash, investment }, investmentAccounts, total: data.accounts.length };
+  const rows = (db.prepare("SELECT account_id, type, register, inv_activity_synced FROM account_view WHERE item_id = ?")
+    .all(item.item_id) as { account_id: string; type: string; register: number; inv_activity_synced: string | null }[])
+    .filter((r) => live.has(r.account_id));
+  const ids = (f: (r: (typeof rows)[number]) => boolean) => new Set(rows.filter(f).map((r) => r.account_id));
+  const investmentAccounts = rows.filter((r) => r.type === "investment")
+    .map(({ account_id, inv_activity_synced }) => ({ account_id, inv_activity_synced }));
+  return {
+    registers: { cash: ids((r) => r.register === 1 && r.type !== "investment"), investment: ids((r) => r.register === 1 && r.type === "investment") },
+    investmentAccounts, total: data.accounts.length,
+  };
 }
 
 async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, onFetched: (n: number) => void) {
@@ -104,14 +110,20 @@ async function syncTransactions(item: SyncItem, registerAccounts: Set<string>, o
   }
 }
 
+const upsertInvTx = db.prepare(`
+  INSERT OR REPLACE INTO investment_transactions (investment_transaction_id, account_id, date, name, type, subtype, amount, quantity, price, fees, security_id, currency)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+
 /**
- * Cash activity for investment accounts that have a register. /transactions/sync never covers investment
- * accounts, so this reads /investments/transactions/get: the full history (Plaid keeps 24 months) the first time,
- * then the last 30 days so late corrections and cancellations land. The window is replaced as a whole.
+ * Activity in every investment account (buys, sells, dividends, contributions...) from /investments/transactions/get:
+ * the full history (Plaid keeps 24 months) the first time, then the last 30 days so late corrections and
+ * cancellations land. The window is replaced as a whole. Accounts with a register (cash management) get their
+ * activity copied into transactions; /transactions/sync never covers investment accounts.
+ * Returns null when investments data isn't available for the Item (INVESTMENTS_UNAVAILABLE).
  */
-async function syncInvestmentTransactions(item: SyncItem, accounts: Registers["investment"], onFetched: (n: number) => void) {
+async function syncInvestmentTransactions(item: SyncItem, accounts: InvestmentAccount[], registers: Set<string>, onFetched: (n: number) => void) {
   const now = Date.now(), end = isoDate(now);
-  const start = isoDate(Math.min(...accounts.map((a) => a.inv_tx_synced ? Date.parse(a.inv_tx_synced) - 30 * DAY : now - 730 * DAY)));
+  const start = isoDate(Math.min(...accounts.map((a) => a.inv_activity_synced ? Date.parse(a.inv_activity_synced) - 30 * DAY : now - 730 * DAY)));
   const ids = accounts.map((a) => a.account_id);
   const fetched: Plaid.InvestmentTransaction[] = [];
   try {
@@ -128,28 +140,39 @@ async function syncInvestmentTransactions(item: SyncItem, accounts: Registers["i
       if (response.investment_transactions.length === 0) break;
     }
   } catch (e) {
-    // Right after Link the investments data may still be loading; the next sync picks it up.
-    if (plaidError(e)?.error_code === "PRODUCT_NOT_READY") return { added: 0, removed: 0 };
+    // Right after Link the data may still be loading, or the Item has no Investments consent: keep what's stored.
+    if (INVESTMENTS_UNAVAILABLE.has(plaidError(e)?.error_code ?? "")) return null;
     throw e;
   }
-  const inList = placeholders(ids);
-  const before = new Set((db.prepare(`SELECT transaction_id FROM transactions WHERE account_id IN (${inList}) AND date >= ?`)
-    .all(...ids, start) as { transaction_id: string }[]).map((r) => r.transaction_id));
+  const inList = placeholders(ids), reg = [...registers], regList = placeholders(reg);
+  const registerIds = () => new Set((db.prepare(`SELECT transaction_id FROM transactions WHERE account_id IN (${regList})`)
+    .all(...reg) as { transaction_id: string }[]).map((r) => r.transaction_id));
+  const before = registerIds();
   transaction(() => {
-    db.prepare(`DELETE FROM transactions WHERE account_id IN (${inList}) AND date >= ?`).run(...ids, start);
+    db.prepare(`DELETE FROM investment_transactions WHERE account_id IN (${inList}) AND date >= ?`).run(...ids, start);
     for (const t of fetched) {
-      // Same sign convention as /transactions/sync: positive = money out. The subtype (deposit, dividend, buy…) is the category.
-      upsertTx.run(t.investment_transaction_id, t.account_id, t.date, t.name, null, t.subtype ?? t.type ?? null, t.amount, 0);
+      upsertInvTx.run(
+        t.investment_transaction_id, t.account_id, t.date, t.name, t.type ?? null, t.subtype ?? null, t.amount,
+        t.quantity ?? null, t.price ?? null, t.fees ?? null, t.security_id ?? null, t.iso_currency_code ?? t.unofficial_currency_code ?? null,
+      );
     }
-    db.prepare(`UPDATE accounts SET inv_tx_synced = ? WHERE account_id IN (${inList})`).run(end, ...ids);
+    db.prepare(`UPDATE accounts SET inv_activity_synced = ? WHERE account_id IN (${inList})`).run(end, ...ids);
+    if (reg.length) {
+      // Registers are rebuilt from the stored activity, so one switched on later gets its full history.
+      // Same sign convention as /transactions/sync: positive = money out. The subtype (deposit, dividend, buy…) is the category.
+      db.prepare(`DELETE FROM transactions WHERE account_id IN (${regList})`).run(...reg);
+      db.prepare(`INSERT INTO transactions (transaction_id, account_id, date, name, merchant, category, amount, pending)
+        SELECT investment_transaction_id, account_id, date, COALESCE(name, ''), NULL, COALESCE(subtype, type), amount, 0
+        FROM investment_transactions WHERE account_id IN (${regList})`).run(...reg);
+    }
   });
-  const after = new Set(fetched.map((t) => t.investment_transaction_id));
+  const after = registerIds();
   return { added: [...after].filter((id) => !before.has(id)).length, removed: [...before].filter((id) => !after.has(id)).length };
 }
 
-// Plaid errors that mean "no holdings for this Item right now", not a failed sync: data still loading after Link,
-// the institution or Item doesn't offer Investments, or the Item was linked without Investments consent.
-const HOLDINGS_UNAVAILABLE = new Set([
+// Plaid errors that mean "no investments data for this Item right now", not a failed sync: data still loading after
+// Link, the institution or Item doesn't offer Investments, or the Item was linked without Investments consent.
+const INVESTMENTS_UNAVAILABLE = new Set([
   "PRODUCT_NOT_READY", "PRODUCTS_NOT_SUPPORTED", "NO_INVESTMENT_ACCOUNTS", "ADDITIONAL_CONSENT_REQUIRED", "INVALID_PRODUCT", "CONSENT_NOT_GRANTED",
 ]);
 
@@ -168,14 +191,14 @@ function pricing(h: Plaid.Holding, s: Plaid.Security | undefined) {
 /**
  * Positions in the Item's investment accounts, from /investments/holdings/get (one call returns every account with
  * its securities). Replaces the Item's stored holdings and records today's snapshot. When holdings are unavailable
- * (HOLDINGS_UNAVAILABLE) the previous holdings are kept and null is returned.
+ * (INVESTMENTS_UNAVAILABLE) the previous holdings are kept and null is returned.
  */
 async function syncHoldings(item: SyncItem, accountIds: string[]): Promise<number | null> {
   let holdings: Plaid.Holding[], securities: Plaid.Security[];
   try {
     ({ holdings, securities } = await plaid.investments.getHoldings({ access_token: item.access_token }));
   } catch (e) {
-    if (HOLDINGS_UNAVAILABLE.has(plaidError(e)?.error_code ?? "")) return null;
+    if (INVESTMENTS_UNAVAILABLE.has(plaidError(e)?.error_code ?? "")) return null;
     throw e;
   }
   const byId = new Map(securities.map((s) => [s.security_id, s]));
@@ -197,8 +220,8 @@ async function syncHoldings(item: SyncItem, accountIds: string[]): Promise<numbe
         h.vested_value ?? null, h.iso_currency_code ?? "USD",
       );
     }
-    db.prepare(`INSERT INTO holding_history (account_id, security_id, date, ticker, name, quantity, price, value)
-      SELECT account_id, security_id, ?, ticker, name, quantity, price, value FROM holdings WHERE account_id IN (${inList})`).run(today, ...accountIds);
+    db.prepare(`INSERT INTO holding_history (account_id, security_id, date, ticker, name, quantity, price, value, cost_basis)
+      SELECT account_id, security_id, ?, ticker, name, quantity, price, value, cost_basis FROM holdings WHERE account_id IN (${inList})`).run(today, ...accountIds);
   });
   return holdings.length;
 }
@@ -211,21 +234,19 @@ export async function syncItem(item: SyncItem, onProgress: Progress = () => {}):
   try {
     phase("balances", "Fetching accounts and balances…");
     const { registers, investmentAccounts, total } = await syncBalances(item);
-    const withRegister = registers.cash.size + registers.investment.length;
+    const withRegister = registers.cash.size + registers.investment.size;
     result.accounts = total; result.registerAccounts = withRegister; result.balanceOnlyAccounts = total - withRegister;
     phase("balances", `${total} account${total === 1 ? "" : "s"} updated`);
     if (registers.cash.size > 0) {
       phase("transactions", "Fetching transactions…");
       Object.assign(result, await syncTransactions(item, registers.cash, (n) => phase("transactions", `${n} transaction changes fetched…`)));
     }
-    if (registers.investment.length > 0) {
-      phase("transactions", "Fetching investment account activity…");
-      const inv = await syncInvestmentTransactions(item, registers.investment, (n) => phase("transactions", `${n} investment transactions fetched…`));
-      result.added += inv.added; result.removed += inv.removed;
-    }
     if (investmentAccounts.length > 0) {
+      phase("transactions", "Fetching investment activity…");
+      const inv = await syncInvestmentTransactions(item, investmentAccounts, registers.investment, (n) => phase("transactions", `${n} investment transactions fetched…`));
+      if (inv) { result.added += inv.added; result.removed += inv.removed; }
       phase("holdings", "Fetching investment holdings…");
-      result.holdings = (await syncHoldings(item, investmentAccounts)) ?? 0;
+      result.holdings = (await syncHoldings(item, investmentAccounts.map((a) => a.account_id))) ?? 0;
     }
     db.prepare("UPDATE items SET last_synced = ?, last_error = NULL WHERE item_id = ?").run(new Date().toISOString(), item.item_id);
   } catch (e) {

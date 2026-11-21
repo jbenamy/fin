@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { ASSET_CLASSES, assetClass } from "../classify.js";
 import { db } from "../db.js";
+import { type Activity, periods, series, type Snapshot } from "../performance.js";
 import type { HoldingRow } from "../types.js";
 
 export const holdings = Router();
@@ -33,4 +34,20 @@ holdings.get("/api/holdings", (req, res) => {
     return value === undefined ? [] : [{ class: c, slot, value, pct: pct(value) }];
   });
   res.json({ synced, holdings: positions, allocation });
+});
+
+// An investment account's value over time against the money put in (series), and gain / return per period.
+// Both start at the first daily snapshot Fin took: Plaid has no history. `activity_synced` is null until a sync has
+// read the account's investment transactions (without them, contributions would count as gains, so no periods).
+holdings.get("/api/performance", (req, res) => {
+  const account = String(req.query.account ?? "");
+  const acct = db.prepare("SELECT inv_activity_synced FROM accounts WHERE account_id = ? AND type = 'investment'").get(account) as
+    { inv_activity_synced: string | null } | undefined;
+  if (!acct) return void res.status(404).json({ error: "unknown investment account" });
+  const snaps = db.prepare("SELECT date, balance AS value FROM balance_history WHERE account_id = ? AND balance IS NOT NULL ORDER BY date")
+    .all(account) as unknown as Snapshot[];
+  const activity = db.prepare("SELECT date, type, subtype, amount, quantity, price FROM investment_transactions WHERE account_id = ? ORDER BY date")
+    .all(account) as unknown as Activity[];
+  const synced = acct.inv_activity_synced;
+  res.json({ activity_synced: synced, series: series(snaps, activity), periods: synced ? periods(snaps, activity) : [] });
 });

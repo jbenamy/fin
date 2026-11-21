@@ -72,7 +72,7 @@ connections.delete("/api/items/:id", async (req, res) => {
     if (code !== "ITEM_NOT_FOUND" && code !== "INVALID_ACCESS_TOKEN") throw e;
   }
   transaction(() => {
-    for (const table of ["transactions", "holdings", "holding_history", "balance_history"]) {
+    for (const table of ["transactions", "investment_transactions", "holdings", "holding_history", "balance_history"]) {
       db.prepare(`DELETE FROM ${table} WHERE account_id IN (SELECT account_id FROM accounts WHERE item_id = ?)`).run(id);
     }
     db.prepare("DELETE FROM accounts WHERE item_id = ?").run(id);

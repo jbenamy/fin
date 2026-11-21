@@ -3,6 +3,7 @@
   import { Pencil, Wallet } from "@lucide/svelte";
   import AccountList from "../components/accounts/AccountList.svelte";
   import Holdings from "../components/accounts/Holdings.svelte";
+  import Performance from "../components/accounts/Performance.svelte";
   import Register from "../components/accounts/Register.svelte";
   import Avatar from "../components/Avatar.svelte";
   import Dialog from "../components/Dialog.svelte";
@@ -93,6 +94,7 @@
       {#each errors as e (e)}<p class="err">{e}</p>{/each}
 
       {#if acct?.kind === "investment"}
+        <Performance accountId={acct.account_id} />
         <Holdings accountId={acct.account_id} />
       {/if}
 

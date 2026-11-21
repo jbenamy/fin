@@ -5,6 +5,10 @@
 Add an investment holdings table, allocation summary, and daily balance/holdings snapshots to the existing family
 dashboard (Fin), using /investments/holdings/get. (workflow_id: wf_45b4e4fe445b3480)
 
+Then (2026-11-20): investment performance: gains and losses over time per investment account, net of money added
+or withdrawn, from Fin's daily snapshots plus /investments/transactions/get for every investment account
+(the developer chose this "full" option over a holdings-only chart, accepting the Investment Transactions charge).
+
 Then (2026-11-08): migrate from plaid-node 47 (`PlaidApi`) to the new `PlaidClient` SDK in plaid 51 with no change
 in behavior; products confirmed unchanged by the developer. (workflow_id: wf_42822d64963fcb97)
 
@@ -13,8 +17,10 @@ in behavior; products confirmed unchanged by the developer. (workflow_id: wf_428
 - Products:
   - transactions (`products`): cash and card activity; daily balances come with /accounts/get (SELECT-001, SELECT-005).
   - identity: removed 2026-10-24 (no longer requested or called); owners are assigned by hand per account.
-  - investments (`additional_consented_products`): holdings for brokerage/retirement accounts, plus the existing
-    /investments/transactions/get for cash management registers (INV-010, INV-015).
+  - investments (`additional_consented_products`): holdings for brokerage/retirement accounts, and (since
+    2026-11-20) /investments/transactions/get for every investment account, not only cash management registers:
+    contributions, withdrawals, dividends and fees separate market gains from money moved in (INV-010, INV-015).
+    This starts the Investment Transactions subscription on Items that only had Holdings before (INV-002).
 - Rejected: investments in `required_if_supported_products` (the previous setting): it bills the Holdings
   subscription at Item creation even for bank-only logins (CONV-002, INV-002). Liabilities: not needed by the
   dashboard today (credit/loan balances come from /accounts/get). /investments/refresh: per-call billing, and the
@@ -49,7 +55,12 @@ in behavior; products confirmed unchanged by the developer. (workflow_id: wf_428
       /transactions/sync keeps its cursor loop (TXN-002, TXN-007); /investments/transactions/get keeps an explicit
       offset loop to total_investment_transactions rather than the SDK's page iterator, which stops at the first
       short page (INV-005, DATA-007).
-- [ ] Later: value-over-time chart from the history tables; owner/family-wide allocation
+- [x] Performance (2026-11-20): `investment_transactions` table for every investment account (24 months first,
+      then a replaced 30-day window from `inv_activity_synced`; offset loop to the total, INV-005, DATA-007);
+      registers rebuilt from it; investments-unavailable codes skip it like holdings; `holding_history.cost_basis`;
+      `GET /api/performance?account=` (gain net of contributions, Modified Dietz return, value vs net invested);
+      Performance card on the account page (`src/performance.ts`, `web/src/components/accounts/Performance.svelte`)
+- [ ] Later: owner/family-wide allocation and performance
 
 ## Acceptance
 
@@ -67,6 +78,11 @@ in behavior; products confirmed unchanged by the developer. (workflow_id: wf_428
 - Remaining checks dropped by the developer (2026-11-08): CHECK-004 (update mode), CHECK-008 (Sandbox run) and
   CHECK-014 (webhooks) are not pursued; the workflow ends here.
 
+- Performance change (2026-11-20): unit, sync (stubbed Plaid) and API tests pass; the app was run on a seeded DB
+  and /api/performance answered (chart and stats screenshotted at 390/900/1440). Not yet run against live Plaid:
+  CHECK-015 needs a real brokerage and a 401(k) after deploy (contributions are reported differently per broker).
+  CHECK-004/008/014 stay dropped as above.
+
 ## Maintenance
 
 This integration is maintained with the Plaid MCP; this file is its durable state. Agents working in this
@@ -83,10 +99,18 @@ later changes invalidate it.
 3. Open a brokerage/IRA/401(k) account: an Allocation bar and a Holdings table appear under the market value.
    An Item linked minutes ago may show "Holdings appear after the next sync" (PRODUCT_NOT_READY).
 
+### Performance
+
+1. After deploying, press **Sync now**: the first sync reads 24 months of activity for every investment account.
+2. Open a brokerage and a 401(k)/IRA: the Performance card shows gain / loss, net contributions, dividends and the
+   value vs net invested chart. A deposit must raise net invested, not the gain.
+
 ## Decisions made
 
 - Holdings table + allocation summary per account, plus daily snapshots (confirmed by the developer, 2026-10-23).
 - Investments moved to additional_consented_products for new links (Claude, per INV-015; existing Items unchanged).
+- Investment activity for every investment account, to report gains net of contributions (developer, 2026-11-20).
+  Performance starts at Fin's first daily snapshot: Plaid has no past values, so activity alone can't rebuild them.
 
 ## Open questions
 

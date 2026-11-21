@@ -7,9 +7,11 @@
   --ok:#5fd39a; --ok-soft:rgba(95,211,154,.13); --warn:#f0b35a; --warn-soft:rgba(240,179,90,.13); --bad:#ff7b84; --bad-soft:rgba(255,123,132,.13);
   --radius:12px; --radius-sm:8px;
   --shadow:0 1px 0 rgba(255,255,255,.02) inset, 0 8px 24px rgba(0,0,0,.18);
-  --nav-w:232px; --page-max:1240px;
+  --nav-w:232px; --page-max:1560px;
 }
 * { box-sizing:border-box }
+/* One thin, quiet scrollbar everywhere (page, account list, wide tables) instead of the browser's default. */
+* { scrollbar-width:thin; scrollbar-color:var(--line-strong) transparent }
 html { -webkit-text-size-adjust:100% }
 body { margin:0; font:14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background:var(--bg); color:var(--fg); -webkit-font-smoothing:antialiased }
 a { color:var(--accent) } a:hover { color:var(--accent-strong) }

@@ -55,17 +55,17 @@
       <h2 class="section-title pad"><Layers size={14} aria-hidden="true" />Holdings</h2>
       <div class="scroll-x">
         <table class="data">
-          <thead><tr><th>Security</th><th class="type">Type</th><th class="num opt">Quantity</th><th class="num opt">Price</th><th class="num">Value</th><th class="num opt">Share</th>
+          <thead><tr><th>Security</th><th class="type">Type</th><th class="num opt mid">Quantity</th><th class="num opt">Price</th><th class="num">Value</th><th class="num opt mid">Share</th>
             {#if hasCost}<th class="num opt">Cost basis</th><th class="num">Gain / loss</th>{/if}{#if hasVested}<th class="num">Vested</th>{/if}</tr></thead>
           <tbody>
             {#each h.holdings as x, i (i)}
               <tr>
                 <td class="sec"><span class="tick">{x.ticker || x.name || "Unknown"}</span>{#if x.ticker && x.name}<small>{x.name}</small>{/if}</td>
                 <td class="muted type">{x.class}</td>
-                <td class="num opt">{qty(x.quantity)}</td>
+                <td class="num opt mid">{qty(x.quantity)}</td>
                 <td class="num opt">{x.price == null ? "—" : usd(x.price, x.currency)}{#if x.price_as_of}<small class:stale={x.stale}>{#if x.stale}<TriangleAlert size={11} aria-label="Stale price" /> {/if}{day(x.price_as_of)}</small>{/if}</td>
                 <td class="num strong">{#if x.stale}<span class="stalemark"><TriangleAlert size={12} aria-label="Stale price" /></span>{/if}{usd(x.value, x.currency)}</td>
-                <td class="num muted opt">{pct(x.pct)}</td>
+                <td class="num muted opt mid">{pct(x.pct)}</td>
                 {#if hasCost}
                   <td class="num opt">{usd(x.cost_basis, x.currency)}</td>
                   <td class="num" class:neg={(x.gain ?? 0) < 0} class:pos={(x.gain ?? 0) > 0}>{signed(x.gain, (n) => usd(n, x.currency))}{#if x.gain_pct != null}<small>{signed(x.gain_pct, pct)}</small>{/if}</td>
@@ -96,6 +96,8 @@
   /* A narrow card (e.g. a laptop with the account list beside it) drops the type column; the allocation above shows types. */
   .holdings { container-type:inline-size }
   @container (max-width: 860px) { .type { display:none } }
+  /* Narrower still (a small laptop): quantity and share go too (share is in the allocation legend), so the table fits without scrolling sideways. */
+  @container (max-width: 720px) { .mid { display:none } }
   /* A phone keeps security, value and gain; the stale-price mark moves next to the value since the price column is gone. */
   .stalemark { display:none; color:var(--warn); margin-right:4px; vertical-align:-1px }
   @container (max-width: 520px) {
